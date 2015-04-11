@@ -33,7 +33,8 @@
 
 
 -export([start/2,
-         stop/1]).
+         stop/1,
+         onrequest/1]).
 
 
 start(_Type, _Args) ->
@@ -41,6 +42,7 @@ start(_Type, _Args) ->
 
     Port = application:get_env(tbcd, port, 8080),
     Host = application:get_env(tbcd, host, '_'),
+    Acl = application:get_env(tbcd, acl, on),
 
     lager:info("host:~p, port: ~p", [Host, Port]),
 
@@ -56,13 +58,41 @@ start(_Type, _Args) ->
                                               {"/[...]", default_handler, []}
                                              ]}
                                      ]),
-    cowboy:start_http(my_http_listener, 100, [{port, Port}],
-                      [{env, [{dispatch, Dispatch}]}]),
+    case Acl of
+    on ->
+        tbcd_acl:acl_start(),
+        cowboy:start_http(my_http_listener, 100, [{port, Port}],
+                          [{env, [{dispatch, Dispatch}]},
+                           {onrequest, fun ?MODULE:onrequest/1}
+                          ]);
+    _ ->
+        cowboy:start_http(my_http_listener, 100, [{port, Port}],
+                          [{env, [{dispatch, Dispatch}]}])
+    end,
+
 	tbcd_sup:start_link().
 
 
 stop(_State) ->
 	ok.
+
+
+onrequest(Req) ->
+    {{IP, Port}, Req2} = cowboy_req:peer(Req),
+    case tbcd_acl:acl_allow(IP) of
+    no ->
+        lager:info("request from ~p:~p, forbidden", [IP, Port]),
+
+        {ok, Req3} = cowboy_req:reply(403,
+                                      [{<<"content-type">>, <<"text/plain">>},
+                                       {<<"connection">>, <<"close">>}],
+                                      <<"access forbidden">>, Req2),
+        Req3;
+    _ ->
+        lager:info("request from ~p:~p, allowed", [IP, Port]),
+
+        Req2
+    end.
 
 
 %%%----------------------------------------------------
