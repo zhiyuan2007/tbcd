@@ -105,7 +105,7 @@ loop(State) ->
                         MatchHead = #subtask{sid = {Tid, '$1'},
                                              result = '$2', _ = '_'},
                         Guard = [],
-                        Result = '[$1, $2]',
+                        Result = ['$1', '$2'],
                         R = mnesia:select(finished_subtask,
                                           [{MatchHead, Guard, [Result]}]),
                         {binary_to_list(URL), R}
