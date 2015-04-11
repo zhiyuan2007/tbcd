@@ -6,7 +6,11 @@
 	{registered, []},
 	{applications, [
 		kernel,
-		stdlib
+		stdlib,
+        inets,
+        mnesia,
+        cowboy,
+        lager
 	]},
 	{mod, {tbcd_app, []}},
 	{env, []}

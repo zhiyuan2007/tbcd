@@ -1,0 +1,4 @@
+-name tbcd@127.0.0.1
+-setcookie tbcd
+-heart
+-mnesia dir '"/home/fenggu/devel/tbcd/mnesia"'

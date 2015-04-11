@@ -24,17 +24,22 @@
 %%% OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
 %%% SUCH DAMAGE.
 %%%
-
--module(tbcd_sup).
--behaviour(supervisor).
 -author('flygoast@126.com').
 
--export([start_link/0]).
--export([init/1]).
 
-start_link() ->
-	supervisor:start_link({local, ?MODULE}, ?MODULE, []).
+-record(project, {name = <<"">> :: binary(),
+                  workers = sets:new()}).
 
-init([]) ->
-	Procs = [],
-	{ok, {{one_for_one, 1, 5}, Procs}}.
+-record(task, {tid = <<"">> :: binary(),
+               project = <<"">> :: binary(),
+               content = <<"">> :: binary(),
+               callback = undefined :: binary() | undefined,
+               timestamp = now() :: erlang:timestamp() | '_'}).
+
+-record(task_count, {tid = <<"">> :: binary(),
+                     count = 0 :: integer()}).
+
+%% sid = {task, worker}
+-record(subtask, {sid = {<<"">>, <<"">>} :: {binary(), binary()},
+                  timestamp = now() :: erlang:timestamp() | '_',
+                  result = <<"">> :: binary()}).

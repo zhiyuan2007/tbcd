@@ -24,17 +24,30 @@
 %%% OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
 %%% SUCH DAMAGE.
 %%%
-
--module(tbcd_sup).
--behaviour(supervisor).
+-module(tbcd_reply).
 -author('flygoast@126.com').
 
--export([start_link/0]).
--export([init/1]).
 
-start_link() ->
-	supervisor:start_link({local, ?MODULE}, ?MODULE, []).
+-include("tbcd.hrl").
 
-init([]) ->
-	Procs = [],
-	{ok, {{one_for_one, 1, 5}, Procs}}.
+
+-export([reply_plain/4,
+         reply_json/4]).
+
+
+reply_plain(Req, State, Code, Content) ->
+    {ok, Req2} = cowboy_req:reply(Code,
+                                  [{<<"content-type">>, <<"text/plain">>},
+                                   {<<"connection">>, <<"close">>}
+                                  ],
+                                  Content, Req),
+    {ok, Req2, State}.
+
+
+reply_json(Req, State, Code, Content) ->
+    {ok, Req2} = cowboy_req:reply(Code,
+                                  [{<<"content-type">>, <<"application/json">>},
+                                   {<<"connection">>, <<"close">>}],
+                                  Content,
+                                  Req),
+    {ok, Req2, State}.

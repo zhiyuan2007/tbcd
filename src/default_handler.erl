@@ -24,17 +24,28 @@
 %%% OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
 %%% SUCH DAMAGE.
 %%%
-
--module(tbcd_sup).
--behaviour(supervisor).
+-module(default_handler).
+-behaviour(cowboy_http_handler).
 -author('flygoast@126.com').
 
--export([start_link/0]).
--export([init/1]).
 
-start_link() ->
-	supervisor:start_link({local, ?MODULE}, ?MODULE, []).
+-export([init/3,
+         handle/2,
+         terminate/3]).
 
-init([]) ->
-	Procs = [],
-	{ok, {{one_for_one, 1, 5}, Procs}}.
+
+-record(state, {}).
+
+
+init(_, Req, _Opts) ->
+	{ok, Req, #state{}}.
+
+
+handle(Req, State=#state{}) ->
+    {Path, Req2} = cowboy_req:path(Req),
+    lager:info("[default]: invalid path: ~p", [Path]),
+    tbcd_reply:reply_plain(Req2, State, 200, <<"invalid path">>).
+
+
+terminate(_Reason, _Req, _State) ->
+	ok.
