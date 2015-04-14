@@ -10,6 +10,7 @@
         inets,
         mnesia,
         uuid,
+        jiffy,
         cowboy,
         lager
 	]},
