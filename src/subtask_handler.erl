@@ -45,21 +45,14 @@ init(_, Req, _Opts) ->
 
     lager:info("body: ~p", [Body]),
 
-    case mochijson2:decode(Body) of
-    {'EXIT', Error} ->
-        lager:info("invalid json: ~p", [Error]),
-        Content = mochijson2:encode({struct,
-                                     [{<<"code">>, 1},
-                                      {<<"reason">>, <<"invalid json">>}]}),
-        shutdown_json(Req2, 200, Content);
-    {struct, Ls} ->
+    case catch jiffy:decode(Body) of
+    {Ls} ->
         case lists:keyfind(<<"mode">>, 1, Ls) of
         false ->
             lager:info("mode argument not supplied", []),
-            Content = mochijson2:encode({struct,
-                                         [{<<"code">>, 1},
-                                          {<<"reason">>,
-                                           <<"mode argument not supplied">>}]}),
+            Content = jiffy:encode({[{<<"code">>, 1},
+                                     {<<"reason">>,
+                                      <<"mode argument not supplied">>}]}),
             shutdown_json(Req2, 200, Content);
         {_, <<"feedback">>} ->
             Content = subtask_feedback(Ls),
@@ -67,11 +60,10 @@ init(_, Req, _Opts) ->
         {_, <<"fetch">>} ->
             case lists:keyfind(<<"worker">>, 1, Ls) of
             false ->
-                Content = mochijson2:encode({struct,
-                                             [{<<"code">>, 1},
-                                              {<<"reason">>,
-                                               <<"worker argument "
-                                                 "not supplied">>}]}),
+                Content = jiffy:encode({[{<<"code">>, 1},
+                                         {<<"reason">>,
+                                          <<"worker argument not supplied">>}
+                                        ]}),
                 shutdown_json(Req2, 200, Content);
             {_, W} ->
                 case subtask_fetch(W) of
@@ -85,27 +77,29 @@ init(_, Req, _Opts) ->
                         %% wait for subtasks arrived or timeout
     	                {loop, Req2, #state{worker = W}, 30000, hibernate};
                     no ->
-                        Content = mochijson2:encode({struct,
-                                                     [{<<"code">>, 1},
-                                                      {<<"reason">>,
-                                                       <<"worker been "
-                                                         "registered">>}]}),
+                        Content = jiffy:encode({[{<<"code">>, 1},
+                                                 {<<"reason">>,
+                                                  <<"worker been registered">>}
+                                                ]}),
                         shutdown_json(Req2, 200, Content)
                     end;
                 T ->
-                    Content = mochijson2:encode({struct,
-                                                 [{<<"code">>, 0},
-                                                  {<<"subtasks">>, T}]}),
+                    Content = jiffy:encode({[{<<"code">>, 0},
+                                             {<<"subtasks">>, T}]}),
                     shutdown_json(Req2, 200, Content)
                 end
             end;
         _ ->
-            Content = mochijson2:encode({struct,
-                                         [{<<"code">>, 1},
-                                          {<<"reason">>,
-                                           <<"invalid mode argument">>}]}),
+            Content = jiffy:encode({[{<<"code">>, 1},
+                                      {<<"reason">>,
+                                       <<"invalid mode argument">>}]}),
             shutdown_json(Req2, 200, Content)
-        end
+        end;
+    {error, Error} ->
+        lager:info("invalid json: ~p", [Error]),
+        Content = jiffy:encode({[{<<"code">>, 1},
+                                 {<<"reason">>, <<"invalid json">>}]}),
+        shutdown_json(Req2, 200, Content)
     end.
 
 
@@ -121,9 +115,7 @@ info({reply}, Req, State) ->
         Content = <<"Internal server error">>,
         tbcd_reply:reply_plain(Req, State, 200, Content);
     T ->
-        Content = mochijson2:encode({struct,
-                                     [{<<"code">>, 0},
-                                      {<<"subtasks">>, T}]}),
+        Content = jiffy:encode({[{<<"code">>, 0}, {<<"subtasks">>, T}]}),
         lager:info("fetched: ~p", [Content]),
         tbcd_reply:reply_json(Req, State, 200, Content)
     end;
@@ -138,54 +130,71 @@ terminate(_Reason, _Req, _State) ->
 subtask_feedback(Ls) ->
     case lists:keyfind(<<"worker">>, 1, Ls) of
     false ->
-        mochijson2:encode({struct,
-                           [{<<"code">>, 1},
-                            {<<"reason">>,
-                             <<"worker argument not supplied">>}]});
+        jiffy:encode({[{<<"code">>, 1},
+                       {<<"reason">>,
+                        <<"worker argument not supplied">>}]});
     {_, W} ->
         case lists:keyfind(<<"subtasks">>, 1, Ls) of
         false ->
-            mochijson2:encode({struct,
-                               [{<<"code">>, 1},
-                                {<<"reason">>,
-                                 <<"subtasks argument not supplied">>}
-                               ]});
+            jiffy:encode({[{<<"code">>, 1},
+                           {<<"reason">>,
+                            <<"subtasks argument not supplied">>}]});
         {_, S} ->
             case subtask_feedback(W, S) of
             [] ->
-                mochijson2:encode({struct,
-                                   [{<<"code">>, 0}]});
+                jiffy:encode({[{<<"code">>, 0}]});
             T ->
-                mochijson2:encode({struct,
-                                   [{<<"code">>, 1},
-                                    {<<"subtasks">>, T}]})
+                jiffy:encode({[{<<"code">>, 1}, {<<"subtasks">>, T}]})
             end
         end
     end.
 
 
 subtask_feedback(Worker, Subtasks) ->
-    F = fun([Id, Result]) ->
-            F2 = fun() ->
-                     T = #subtask{sid = {Id, Worker},
-                                  timestamp = now(),
-                                  result = Result},
-                     CounterIncr = case mnesia:read(finished_subtask,
-                                              T#subtask.sid) of
-                                   [] -> -1;
-                                   _ -> 0
-                                   end,
-                     mnesia:write(finished_subtask, T, write),
-                     mnesia:delete({fetched_subtask, T#subtask.sid}),
-                     CounterIncr
-                 end,
-            case mnesia:transaction(F2) of
-            {atomic, CounterIncr} ->
-                tbcd_subtask:get_proc() ! {feedback, Id, CounterIncr},
+    F = fun({Ls}) ->
+            Tid = case lists:keyfind(<<"tid">>, 1, Ls) of
+                  false ->
+                      false;
+                  TID ->
+                      TID
+                  end,
+
+            Result = case lists:keyfind(<<"result">>, 1, Ls) of
+                     false ->
+                         false;
+                     R ->
+                         R
+                     end,
+
+            case {Tid, Result} of
+            {false, _} ->
+                %% just ignored the invalid subtask
                 false;
-            {aborted, Reason} ->
-                lager:error("feedback, mnesia error: ~p", [Reason]),
-                {true, Id}
+            {_, false} ->
+                %% just ignored the invalid subtask
+                false;
+            _ ->
+                F2 = fun() ->
+                         T = #subtask{sid = {Tid, Worker},
+                                      timestamp = now(),
+                                      result = Result},
+                         CounterIncr = case mnesia:read(finished_subtask,
+                                                        T#subtask.sid) of
+                                       [] -> -1;
+                                       _ -> 0
+                                       end,
+                         mnesia:write(finished_subtask, T, write),
+                         mnesia:delete({fetched_subtask, T#subtask.sid}),
+                         CounterIncr
+                     end,
+                case mnesia:transaction(F2) of
+                {atomic, CounterIncr} ->
+                    tbcd_subtask:get_proc() ! {feedback, Tid, CounterIncr},
+                    false;
+                {aborted, Reason} ->
+                    lager:error("feedback, mnesia error: ~p", [Reason]),
+                    {true, Tid}
+                end
             end
         end,
     lists:filtermap(F, Subtasks).
@@ -210,7 +219,9 @@ subtask_fetch(Worker) ->
 
                          lager:info("fetched task: ~p", [Task]),
 
-                         [Tid, Task#task.project, Task#task.content]
+                         {[{<<"tid">>, Tid},
+                           {<<"project">>, Task#task.project},
+                           {<<"content">>, Task#task.content}]}
                      end,
                 lists:map(F2, Es);
             '$end_of_table' ->

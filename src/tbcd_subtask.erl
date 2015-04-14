@@ -105,7 +105,7 @@ loop(State) ->
                         MatchHead = #subtask{sid = {Tid, '$1'},
                                              result = '$2', _ = '_'},
                         Guard = [],
-                        Result = ['$1', '$2'],
+                        Result = {[{<<"worker">>, '$1'}, {<<"result">>, '$2'}]},
                         R = mnesia:select(finished_subtask,
                                           [{MatchHead, Guard, [Result]}]),
                         {binary_to_list(URL), R}
@@ -117,9 +117,8 @@ loop(State) ->
             {atomic, {error, _Reason}} ->
                 ok;
             {atomic, {Callback, Rs}} ->
-                Content = mochijson2:encode({struct,
-                                             [{<<"tid">>, Tid},
-                                              {<<"results">>, Rs}]}),
+                Content = jiffy:encode({[{<<"tid">>, Tid},
+                                         {<<"results">>, Rs}]}),
                 Headers = [{"Connection", "close"}],
                 Req = {Callback, Headers, "application/json", Content},
                 Opts = [{timeout, 10000}, {connect_timeout, 5000}],

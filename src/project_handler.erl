@@ -50,23 +50,15 @@ handle(Req, State=#state{}) ->
 
     lager:info("body: ~p", [Body]),
 
-    case mochijson2:decode(Body) of
-    {'EXIT', Error} ->
-        lager:info("invalid json: ~p", [Error]),
-        Content = mochijson2:encode({struct,
-                                     [{<<"code">>, 1},
-                                      {<<"reason">>, <<"invalid json">>}
-                                     ]}),
-        tbcd_reply:reply_json(Req2, State, 200, Content);
-    {struct, Ls} ->
+    case catch jiffy:decode(Body) of
+    {Ls} ->
         case lists:keyfind(<<"mode">>, 1, Ls) of
         false ->
             lager:info("mode argument not supplied", []),
-            Content = mochijson2:encode({struct,
-                                         [{<<"code">>, 1},
-                                          {<<"reason">>,
-                                           <<"mode argument not supplied">>}
-                                         ]}),
+            Content = jiffy:encode({[{<<"code">>, 1},
+                                     {<<"reason">>,
+                                      <<"mode argument not supplied">>}
+                                    ]}),
             tbcd_reply:reply_json(Req2, State, 200, Content);
         {_, <<"add">>} ->
             case project_add(Ls) of
@@ -74,15 +66,13 @@ handle(Req, State=#state{}) ->
                 tbcd_reply:reply_plain(Req2, State, 500,
                                        <<"Internal server error">>);
             {error, Reason} ->
-                Content = mochijson2:encode({struct,
-                                             [{<<"code">>, 1},
-                                              {<<"reason">>,
-                                               list_to_binary(Reason)}
-                                             ]}),
+                Content = jiffy:encode({[{<<"code">>, 1},
+                                         {<<"reason">>,
+                                          list_to_binary(Reason)}
+                                        ]}),
                 tbcd_reply:reply_json(Req2, State, 200, Content);
             ok ->
-                Content = mochijson2:encode({struct,
-                                             [{<<"code">>, 0}]}),
+                Content = jiffy:encode({[{<<"code">>, 0}]}),
                 tbcd_reply:reply_json(Req2, State, 200, Content)
             end;
         {_, <<"delete">>} ->
@@ -91,15 +81,12 @@ handle(Req, State=#state{}) ->
                 tbcd_reply:reply_plain(Req2, State, 500,
                                        <<"Internal server error">>);
             {error, Reason} ->
-                Content = mochijson2:encode({struct,
-                                             [{<<"code">>, 1},
-                                              {<<"reason">>,
-                                               list_to_binary(Reason)}
-                                             ]}),
+                Content = jiffy:encode({[{<<"code">>, 1},
+                                         {<<"reason">>,
+                                          list_to_binary(Reason)}]}),
                 tbcd_reply:reply_json(Req2, State, 200, Content);
             ok ->
-                Content = mochijson2:encode({struct,
-                                             [{<<"code">>, 0}]}),
+                Content = jiffy:encode({[{<<"code">>, 0}]}),
                 tbcd_reply:reply_json(Req2, State, 200, Content)
             end;
         {_, <<"select">>} ->
@@ -107,10 +94,8 @@ handle(Req, State=#state{}) ->
             false ->
                 Projects = project_select(),
                 lager:info("get all projects: ~p", [Projects]),
-                Content = mochijson2:encode({struct,
-                                             [{<<"code">>, 0},
-                                              {<<"projects">>, Projects}
-                                             ]}),
+                Content = jiffy:encode({[{<<"code">>, 0},
+                                         {<<"projects">>, Projects}]}),
                 tbcd_reply:reply_json(Req2, State, 200, Content);
             {_, P} ->
                 case project_select(P) of
@@ -118,29 +103,28 @@ handle(Req, State=#state{}) ->
                     tbcd_reply:reply_plain(Req2, State, 500,
                                            <<"Internal server error">>);
                 {error, Reason} ->
-                    Content = mochijson2:encode({struct,
-                                                 [{<<"code">>, 1},
-                                                  {<<"reason">>,
-                                                   list_to_binary(Reason)}
-                                                 ]}),
+                    Content = jiffy:encode({[{<<"code">>, 1},
+                                             {<<"reason">>,
+                                              list_to_binary(Reason)}]}),
                     tbcd_reply:reply_json(Req2, State, 200, Content);
                 Rs ->
-                    Content = mochijson2:encode({struct,
-                                                 [{<<"code">>, 0},
-                                                  {<<"workers">>, Rs}
-                                                 ]}),
+                    Content = jiffy:encode({[{<<"code">>, 0},
+                                             {<<"workers">>, Rs}]}),
                     tbcd_reply:reply_json(Req2, State, 200, Content)
                 end
             end;
         {_, Mode} ->
             lager:error("invalid mode argument: ~p", [Mode]),
-            Content = mochijson2:encode({struct,
-                                         [{<<"code">>, 1},
-                                          {<<"reason">>,
-                                           <<"invalid mode argument">>}
-                                         ]}),
+            Content = jiffy:encode({[{<<"code">>, 1},
+                                     {<<"reason">>,
+                                      <<"invalid mode argument">>}]}),
             tbcd_reply:reply_json(Req2, State, 200, Content)
-        end
+        end;
+    {error, Reason} ->
+        lager:info("invalid json: ~p", [Reason]),
+        Content = jiffy:encode({[{<<"code">>, 1},
+                                 {<<"reason">>, <<"invalid json">>}]}),
+        tbcd_reply:reply_json(Req2, State, 200, Content)
     end.
 
 
@@ -228,6 +212,7 @@ project_add(Ls) ->
              W
          end,
 
+    %% drop the duplicated
     WkSet = sets:from_list(Wk),
     UWK = sets:to_list(WkSet),
 
@@ -245,9 +230,10 @@ project_add(Ls) ->
                 [#project{workers = OW}] ->
                     NewWorkers = sets:union(OW, WkSet),
                     mnesia:write(#project{name = P, workers = NewWorkers}),
-                    lager:info("add old project: ~p, workers: ~p, "
-                               "all workers: ~p",
-                               [P, UWK, sets:to_list(NewWorkers)]),
+                    lager:info("add old project: ~p, old workers: ~p, "
+                               "added workers: ~p, all workers: ~p",
+                               [P, sets:to_list(OW),
+                                UWK, sets:to_list(NewWorkers)]),
                     ok
                 end
             end,

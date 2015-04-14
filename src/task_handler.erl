@@ -49,23 +49,14 @@ handle(Req, State=#state{}) ->
 
     lager:info("body: ~p", [Body]),
 
-    case mochijson2:decode(Body) of
-    {'EXIT', Error} ->
-        lager:info("invalid json: ~p", [Error]),
-        Content = mochijson2:encode({struct,
-                                     [{<<"code">>, 1},
-                                      {<<"reason">>, <<"invalid json">>}
-                                     ]}),
-        tbcd_reply:reply_json(Req2, State, 200, Content);
-    {struct, Ls} ->
+    case catch jiffy:decode(Body) of
+    {Ls} ->
         case lists:keyfind(<<"mode">>, 1, Ls) of
         false ->
             lager:info("mode argument not supplied", []),
-            Content = mochijson2:encode({struct,
-                                         [{<<"code">>, 1},
-                                          {<<"reason">>,
-                                           <<"mode argument not supplied">>}
-                                         ]}),
+            Content = jiffy:encode({[{<<"code">>, 1},
+                                     {<<"reason">>,
+                                      <<"mode argument not supplied">>}]}),
             tbcd_reply:reply_json(Req2, State, 200, Content);
         {_, <<"add">>} ->
             case task_add(Ls) of
@@ -73,44 +64,39 @@ handle(Req, State=#state{}) ->
                 tbcd_reply:reply_plain(Req2, State, 500,
                                        <<"Internal server error">>);
             {error, Reason} ->
-                Content = mochijson2:encode({struct,
-                                             [{<<"code">>, 1},
-                                              {<<"reason">>,
-                                               list_to_binary(Reason)}
-                                             ]}),
+                Content = jiffy:encode({[{<<"code">>, 1},
+                                         {<<"reason">>,
+                                          list_to_binary(Reason)}]}),
                 tbcd_reply:reply_json(Req2, State, 200, Content);
             Tid ->
-                Content = mochijson2:encode({struct,
-                                             [{<<"code">>, 0},
-                                              {<<"tid">>, Tid}
-                                             ]}),
+                Content = jiffy:encode({[{<<"code">>, 0},
+                                         {<<"tid">>, Tid}]}),
                 tbcd_reply:reply_json(Req2, State, 200, Content)
             end;
         {_, <<"select">>} ->
             case task_select(Ls) of
             {error, Reason} ->
-                Content = mochijson2:encode({struct,
-                                             [{<<"code">>, 1},
-                                              {<<"reason">>,
-                                               list_to_binary(Reason)}
-                                             ]}),
+                Content = jiffy:encode({[{<<"code">>, 1},
+                                         {<<"reason">>,
+                                          list_to_binary(Reason)}]}),
                 tbcd_reply:reply_json(Req2, State, 200, Content);
             Rs ->
-                Content = mochijson2:encode({struct,
-                                             [{<<"code">>, 0},
-                                              {<<"tasks">>, Rs}
-                                             ]}),
+                Content = jiffy:encode({[{<<"code">>, 0}, {<<"tasks">>, Rs}]}),
+                lager:info("select result: ~p", [Content]),
                 tbcd_reply:reply_json(Req2, State, 200, Content)
             end;
         {_, Mode} ->
             lager:error("invalid mode argument: ~p", [Mode]),
-            Content = mochijson2:encode({struct,
-                                         [{<<"code">>, 1},
-                                          {<<"reason">>,
-                                           <<"invalid mode argument">>}
-                                         ]}),
+            Content = jiffy:encode({[{<<"code">>, 1},
+                                     {<<"reason">>,
+                                      <<"invalid mode argument">>}]}),
             tbcd_reply:reply_json(Req2, State, 200, Content)
-        end
+        end;
+    {error, Error} ->
+        lager:info("invalid json: ~p", [Error]),
+        Content = jiffy:encode({[{<<"code">>, 1},
+                                 {<<"reason">>, <<"invalid json">>}]}),
+        tbcd_reply:reply_json(Req2, State, 200, Content)
     end.
 
 
@@ -123,14 +109,21 @@ task_select(Ls) ->
     false ->
         {error, "tids argument not supplied"};
     {_, TIDS} ->
+        lager:info("tids: ~p", [TIDS]),
         F = fun(Id) ->
-                [TaskCount] = mnesia:dirty_read(task_count, Id),
-                #task_count{count = Count} = TaskCount,
+                case mnesia:dirty_read(task_count, Id) of
+                [] ->
+                    {[{<<"tid">>, Id},
+                      {<<"status">>, -1}]};
+                [TaskCount] ->
+                    #task_count{count = Count} = TaskCount,
 
-                lager:info("select, tid: ~p, unfinished count: ~p",
-                           [Id, Count]),
+                    lager:info("select, tid: ~p, unfinished count: ~p",
+                               [Id, Count]),
 
-                [Id, list_to_binary(integer_to_list(Count))]
+                    {[{<<"tid">>, Id},
+                      {<<"status">>, list_to_binary(integer_to_list(Count))}]}
+                end
             end,
         lists:map(F, TIDS)
     end.
