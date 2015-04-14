@@ -9,6 +9,7 @@
 		stdlib,
         inets,
         mnesia,
+        uuid,
         cowboy,
         lager
 	]},
