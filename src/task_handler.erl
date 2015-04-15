@@ -157,26 +157,35 @@ task_add(Ls) ->
     case {Project, Content} of
     {false, _} ->
         {error, "project argument not supplied"};
+    {<<"">>, _} ->
+        {error, "project argument is empty"};
     {_, false} ->
         {error, "content argument not supplied"};
+    {_, <<"">>} ->
+        {error, "content argument is empty"};
     {_, _} ->
-        Tid = list_to_binary(uuid:to_string(uuid:uuid1())),
+        case mnesia:dirty_read(project, Project) of
+        [] ->
+            {error, "invalid project"};
+        _ ->
+            Tid = list_to_binary(uuid:to_string(uuid:uuid1())),
 
-        lager:info("add: taskid: ~p", [Tid]),
+            lager:info("add: taskid: ~p", [Tid]),
 
-        F = fun() ->
-                mnesia:write(#task{tid = Tid,
-                                   project = Project,
-                                   content = Content,
-                                   callback = Callback,
-                                   timestamp = now()})
-            end,
-        case mnesia:transaction(F) of
-        {atomic, _Rs} ->
-            tbcd_subtask:get_proc() ! {new, Tid, Project},
-            Tid;
-        {aborted, Reason} ->
-            lager:error("add: mnesia error: ~p", [Reason]),
-            {aborted, Reason}
+            F = fun() ->
+                    mnesia:write(#task{tid = Tid,
+                                       project = Project,
+                                       content = Content,
+                                       callback = Callback,
+                                       timestamp = now()})
+                end,
+            case mnesia:transaction(F) of
+            {atomic, _Rs} ->
+                tbcd_subtask:get_proc() ! {new, Tid, Project},
+                Tid;
+            {aborted, Reason} ->
+                lager:error("add: mnesia error: ~p", [Reason]),
+                {aborted, Reason}
+            end
         end
     end.
