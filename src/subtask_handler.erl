@@ -139,65 +139,74 @@ subtask_feedback(Ls) ->
             jiffy:encode({[{<<"code">>, 1},
                            {<<"reason">>,
                             <<"subtasks argument not supplied">>}]});
-        {_, S} ->
+        {_, S} when is_list(S) ->
             case subtask_feedback(W, S) of
-            [] ->
+            true ->
                 jiffy:encode({[{<<"code">>, 0}]});
-            T ->
-                jiffy:encode({[{<<"code">>, 1}, {<<"subtasks">>, T}]})
-            end
+            {false, Reason} ->
+                jiffy:encode({[{<<"code">>, 0}, {<<"reason">>, Reason}]});
+            error ->
+                jiffy:encode({[{<<"code">>, 1}, {<<"reason">>,
+                                                 <<"process failed">>}]});
+            _ ->
+                jiffy:encode({[{<<"code">>, 1}, {<<"reason">>,
+                                                 <<"invalid subtask">>}]})
+            end;
+        _ ->
+            jiffy:encode({[{<<"code">>, 1},
+                           {<<"reason">>,
+                            <<"subtasks argument must be a array">>}]})
         end
     end.
 
 
-subtask_feedback(Worker, Subtasks) ->
-    F = fun({Ls}) ->
-            Tid = case lists:keyfind(<<"tid">>, 1, Ls) of
-                  false ->
-                      false;
-                  TID ->
-                      TID
-                  end,
-
-            Result = case lists:keyfind(<<"result">>, 1, Ls) of
-                     false ->
-                         false;
-                     R ->
-                         R
-                     end,
-
-            case {Tid, Result} of
-            {false, _} ->
-                %% just ignored the invalid subtask
-                false;
-            {_, false} ->
-                %% just ignored the invalid subtask
-                false;
-            _ ->
-                F2 = fun() ->
-                         T = #subtask{sid = {Tid, Worker},
-                                      timestamp = now(),
-                                      result = Result},
-                         CounterIncr = case mnesia:read(finished_subtask,
-                                                        T#subtask.sid) of
-                                       [] -> -1;
-                                       _ -> 0
-                                       end,
-                         mnesia:write(finished_subtask, T, write),
-                         mnesia:delete({fetched_subtask, T#subtask.sid}),
-                         CounterIncr
-                     end,
-                case mnesia:transaction(F2) of
-                {atomic, CounterIncr} ->
-                    tbcd_subtask:get_proc() ! {feedback, Tid, CounterIncr},
-                    false;
-                {aborted, Reason} ->
-                    lager:error("feedback, mnesia error: ~p", [Reason]),
-                    {true, Tid}
-                end
+subtask_feedback(_Worker, []) ->
+    true;
+subtask_feedback(Worker, [{Subtask}, L]) ->
+    case lists:keyfind(<<"tid">>, 1, Subtask) of
+    false ->
+        {false, "tid argument not supplied"};
+    {_, Tid} ->
+        case lists:keyfind(<<"result">>, 1, Subtask) of
+        false ->
+            {false, "result argument not supplied"};
+        {_, Result} ->
+            case subtask_feedback(Worker, Tid, Result) of
+            true ->
+                subtask_feedback(Worker, L);
+            error ->
+                error
             end
+        end
+    end;
+subtask_feedback(_, _) ->
+    false.
+
+
+subtask_feedback(Worker, Tid, Result) ->
+    F = fun() ->
+            T = #subtask{sid = {Tid, Worker},
+                         timestamp = now(),
+                         result = Result},
+
+            CounterIncr = case mnesia:read(finished_subtask,
+                                           T#subtask.sid) of
+                          [] -> -1;
+                          _ -> 0
+                          end,
+
+            mnesia:write(finished_subtask, T, write),
+            mnesia:delete({fetched_subtask, T#subtask.sid}),
+            CounterIncr
         end,
-    lists:filtermap(F, Subtasks).
+    case mnesia:transaction(F) of
+    {atomic, CounterIncr} ->
+        tbcd_subtask:get_proc() ! {feedback, Tid, CounterIncr},
+        true;
+    {aborted, Reason} ->
+        lager:error("feedback, mnesia error: ~p", [Reason]),
+        error
+    end.
 
 
 subtask_fetch(Worker) ->
