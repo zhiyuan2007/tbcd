@@ -162,7 +162,7 @@ subtask_feedback(Ls) ->
 
 subtask_feedback(_Worker, []) ->
     true;
-subtask_feedback(Worker, [{Subtask}, L]) ->
+subtask_feedback(Worker, [{Subtask} | L]) ->
     case lists:keyfind(<<"tid">>, 1, Subtask) of
     false ->
         {false, "tid argument not supplied"};
