@@ -124,14 +124,19 @@ info(_Info, Req, State) ->
 
 
 terminate(_Reason, _Req, #state{worker = Worker}) ->
-    if
-    Worker =/= <<"">> ->
+    case Worker of
+    <<"">> ->
+        null;
+    _ ->
         Pid = self(),
-        Reg = global:whereis_name(Worker),
-        if Pid =:= Reg ->
-            global:unregister_name(Worker)
+        case global:whereis_name(Worker) of
+        Pid ->
+            global:unregister_name(Worker);
+        _ ->
+            null
         end
     end,
+
     ok.
 
 
