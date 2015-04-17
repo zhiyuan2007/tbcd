@@ -28,128 +28,152 @@
 -author('flygoast@126.com').
 
 
+-behaviour(gen_server).
+
+
 -include("tbcd.hrl").
 
 
--export([init/0,
-         get_proc/0,
+-export([start_link/0,
          http_recv/1]).
+
+
+%% gen_server callbacks
+-export([init/1,
+         handle_call/3,
+         handle_cast/2,
+         handle_info/2,
+         terminate/2,
+         code_change/3]).
 
 
 -record(state, {}).
 
 
-init() ->
-    loop(#state{}).
+start_link() ->
+    gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
 
 
-loop(State) ->
-    receive
-    {new, Tid, Project} ->
-        lager:info("project: ~p, tid: ~p", [Project, Tid]),
+%%================================================
+%% gen_server callbacks
+%%================================================
+init([]) ->
+    {ok, #state{}}.
+
+
+handle_call(_Request, _From, State) ->
+    {reply, ok, State}.
+
+
+handle_cast(_Msg, State) ->
+    {noreply, State}.
+
+
+handle_info({new, Tid, Project}, State) ->
+    lager:info("project: ~p, tid: ~p", [Project, Tid]),
+
+    F = fun() ->
+            case mnesia:read(project, Project) of
+            [] ->
+                {error, "project not existed"};
+            [#project{workers = W}] ->
+                L = sets:to_list(W),
+
+                lager:info("project: ~p, workers: ~p", [Project, L]),
+
+                lists:foreach(fun(Ele) ->
+                                  ST = #subtask{sid = {Tid, Ele},
+                                                timestamp = now()},
+                                  mnesia:write(unfetched_subtask, ST,
+                                               write),
+
+                                  case global:whereis_name(Ele) of
+                                  undefined ->
+                                      ok;
+                                  Pid ->
+                                      Pid ! {reply}
+                                  end,
+
+                                  lager:info("new: ~p: ~p", [Tid, Ele])
+                              end, L),
+                length(L)
+            end
+        end,
+    case mnesia:transaction(F) of
+    {atomic, {error, Reason}} ->
+        lager:error("new subtask error: ~p", [Reason]);
+    {atomic, N} ->
+        lager:info("new subtask count: ~p", [N]),
+        mnesia:dirty_update_counter(task_count, Tid, N);
+    {aborted, Reason} ->
+        lager:error("mnesia error: ~p", [Reason])
+    end,
+    {noreply, State};
+handle_info({feedback, Tid, Incr}, State) ->
+    NewCount = mnesia:dirty_update_counter(task_count, Tid, Incr),
+
+    lager:info("incr: ~p, tid: ~p, count: ~p", [Incr, Tid, NewCount]),
+
+    case NewCount of
+    0 ->
         F = fun() ->
-                case mnesia:read(project, Project) of
+                case mnesia:read(task, Tid) of
                 [] ->
-                    {error, "project not existed"};
-                [#project{workers = W}] ->
-                    L = sets:to_list(W),
-
-                    lager:info("project: ~p, workers: ~p", [Project, L]),
-
-                    lists:foreach(fun(Ele) ->
-                                      ST = #subtask{sid = {Tid, Ele},
-                                                    timestamp = now()},
-                                      mnesia:write(unfetched_subtask, ST,
-                                                   write),
-
-                                      case global:whereis_name(Ele) of
-                                      undefined ->
-                                          ok;
-                                      Pid ->
-                                          Pid ! {reply}
-                                      end,
-
-                                      lager:info("new: ~p: ~p", [Tid, Ele])
-                                  end, L),
-                    length(L)
+                    lager:error("feedback, invalid tid: ~p", [Tid]),
+                    {error, "invalid tid"};
+                [#task{callback = undefined}] ->
+                    ok;
+                [#task{callback = URL}] ->
+                    %% get HTTP callback and all results
+                    MatchHead = #subtask{sid = {Tid, '$1'},
+                                         result = '$2', _ = '_'},
+                    Guard = [],
+                    R = mnesia:select(finished_subtask,
+                                      [{MatchHead, Guard, ['$$']}]),
+                    {binary_to_list(URL), R}
                 end
             end,
         case mnesia:transaction(F) of
-        {atomic, {error, Reason}} ->
-            lager:error("new subtask error: ~p", [Reason]);
-        {atomic, N} ->
-            lager:info("new subtask count: ~p", [N]),
-            mnesia:dirty_update_counter(task_count, Tid, N);
+        {atomic, ok} ->
+            ok;
+        {atomic, {error, _Reason}} ->
+            ok;
+        {atomic, {Callback, Rs}} ->
+
+            Ret = lists:map(fun([Worker, Result]) ->
+                                {[{<<"worker">>, Worker},
+                                  {<<"result">>, Result}]}
+                            end, Rs),
+
+            Content = jiffy:encode({[{<<"tid">>, Tid},
+                                     {<<"results">>, Ret}]}),
+            Headers = [{"Connection", "close"}],
+            Req = {Callback, Headers, "application/json", Content},
+            Opts = [{timeout, 10000}, {connect_timeout, 5000}],
+            HttpOpts = [{sync, false}, {stream, self},
+                        {receiver, {?MODULE, http_recv, []}}],
+            {ok, RequestId} = httpc:request(post, Req, Opts, HttpOpts),
+
+            lager:info("callback: ~p, tid: ~p, requestid: ~p",
+                       [Callback, Tid, RequestId]);
         {aborted, Reason} ->
-            lager:error("mnesia error: ~p", [Reason])
-        end,
-
-        loop(State);
-    {feedback, Tid, Incr} ->
-        NewCount = mnesia:dirty_update_counter(task_count, Tid, Incr),
-
-        lager:info("incr: ~p, tid: ~p, count: ~p",
-                   [Incr, Tid, NewCount]),
-
-        case NewCount of
-        0 ->
-            F = fun() ->
-                    case mnesia:read(task, Tid) of
-                    [] ->
-                        lager:error("feedback, invalid tid: ~p", [Tid]),
-                        {error, "invalid tid"};
-                    [#task{callback = undefined}] ->
-                        ok;
-                    [#task{callback = URL}] ->
-                        %% get HTTP callback and all results
-                        MatchHead = #subtask{sid = {Tid, '$1'},
-                                             result = '$2', _ = '_'},
-                        Guard = [],
-                        R = mnesia:select(finished_subtask,
-                                          [{MatchHead, Guard, ['$$']}]),
-                        {binary_to_list(URL), R}
-                    end
-                end,
-            case mnesia:transaction(F) of
-            {atomic, ok} ->
-                ok;
-            {atomic, {error, _Reason}} ->
-                ok;
-            {atomic, {Callback, Rs}} ->
-
-                Ret = lists:map(fun([Worker, Result]) ->
-                                    {[{<<"worker">>, Worker},
-                                      {<<"result">>, Result}]}
-                                end, Rs),
-
-                Content = jiffy:encode({[{<<"tid">>, Tid},
-                                         {<<"results">>, Ret}]}),
-                Headers = [{"Connection", "close"}],
-                Req = {Callback, Headers, "application/json", Content},
-                Opts = [{timeout, 10000}, {connect_timeout, 5000}],
-                HttpOpts = [{sync, false}, {stream, self},
-                            {receiver, {?MODULE, http_recv, []}}],
-                {ok, RequestId} = httpc:request(post, Req, Opts, HttpOpts),
-
-                lager:info("callback: ~p, tid: ~p, requestid: ~p",
-                           [Callback, Tid, RequestId]);
-            {aborted, Reason} ->
-                lager:error("mnesia failed: ~p", [Reason])
-            end;
-        _ ->
-            ok
-        end,
-
-        loop(State);
-    stop ->
-        ok;
+            lager:error("mnesia failed: ~p", [Reason])
+        end;
     _ ->
-        loop(State)
-    end.
+        ok
+    end,
+
+    {noreply, State};
+handle_info(_Info, State) ->
+    {noreply, State}.
 
 
-get_proc() ->
-    list_to_atom(atom_to_list(node()) ++ "_" ++ "subtask").
+terminate(_Reason, _State) ->
+    ok.
+
+
+code_change(_OldVsn, State, _Extra) ->
+    {ok, State}.
 
 
 http_recv({RequestId, {error, Reason}}) ->

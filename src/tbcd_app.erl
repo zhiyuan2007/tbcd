@@ -49,9 +49,6 @@ start(_Type, _Args) ->
     %% initialized database
     db_init(),
 
-    %% registered a process to dispatch subtasks
-    register(tbcd_subtask:get_proc(), spawn(tbcd_subtask, init, [])),
-
     Dispatch = cowboy_router:compile([{Host, [{"/project", project_handler, []},
                                               {"/task", task_handler, []},
                                               {"/subtask", subtask_handler, []},

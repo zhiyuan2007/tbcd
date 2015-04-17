@@ -190,7 +190,7 @@ task_add2(Project, Content, Callback) ->
             end,
         case mnesia:transaction(F) of
         {atomic, _Rs} ->
-            tbcd_subtask:get_proc() ! {new, Tid, Project},
+            tbcd_subtask ! {new, Tid, Project},
             Tid;
         {aborted, Reason} ->
             lager:error("add: mnesia error: ~p", [Reason]),

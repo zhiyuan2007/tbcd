@@ -36,5 +36,14 @@ start_link() ->
 	supervisor:start_link({local, ?MODULE}, ?MODULE, []).
 
 init([]) ->
-	Procs = [],
+    SubtaskChildSpec = {
+        tbcd_subtask,
+        {tbcd_subtask, start_link, []},
+        permanent,
+        brutal_kill,
+        worker,
+        [tbcd_subtak]
+    },
+	Procs = [SubtaskChildSpec],
+
 	{ok, {{one_for_one, 1, 5}, Procs}}.

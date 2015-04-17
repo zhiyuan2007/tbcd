@@ -238,7 +238,7 @@ subtask_feedback(Worker, Tid, Result) ->
         end,
     case mnesia:transaction(F) of
     {atomic, CounterIncr} ->
-        tbcd_subtask:get_proc() ! {feedback, Tid, CounterIncr},
+        tbcd_subtask ! {feedback, Tid, CounterIncr},
         true;
     {aborted, Reason} ->
         lager:error("feedback, mnesia error: ~p", [Reason]),
