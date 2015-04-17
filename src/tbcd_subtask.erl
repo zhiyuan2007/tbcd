@@ -88,7 +88,7 @@ loop(State) ->
     {feedback, Tid, Incr} ->
         NewCount = mnesia:dirty_update_counter(task_count, Tid, Incr),
 
-        lager:info("incr: ~p, feedback: ~p, count: ~p",
+        lager:info("incr: ~p, tid: ~p, count: ~p",
                    [Incr, Tid, NewCount]),
 
         case NewCount of
@@ -105,9 +105,8 @@ loop(State) ->
                         MatchHead = #subtask{sid = {Tid, '$1'},
                                              result = '$2', _ = '_'},
                         Guard = [],
-                        Result = {[{<<"worker">>, '$1'}, {<<"result">>, '$2'}]},
                         R = mnesia:select(finished_subtask,
-                                          [{MatchHead, Guard, [Result]}]),
+                                          [{MatchHead, Guard, ['$$']}]),
                         {binary_to_list(URL), R}
                     end
                 end,
@@ -117,8 +116,14 @@ loop(State) ->
             {atomic, {error, _Reason}} ->
                 ok;
             {atomic, {Callback, Rs}} ->
+
+                Ret = lists:map(fun([Worker, Result]) ->
+                                    {[{<<"worker">>, Worker},
+                                      {<<"result">>, Result}]}
+                                end, Rs),
+
                 Content = jiffy:encode({[{<<"tid">>, Tid},
-                                         {<<"results">>, Rs}]}),
+                                         {<<"results">>, Ret}]}),
                 Headers = [{"Connection", "close"}],
                 Req = {Callback, Headers, "application/json", Content},
                 Opts = [{timeout, 10000}, {connect_timeout, 5000}],
