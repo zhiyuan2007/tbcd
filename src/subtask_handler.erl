@@ -120,11 +120,19 @@ info({reply}, Req, State) ->
         tbcd_reply:reply_json(Req, State, 200, Content)
     end;
 info(_Info, Req, State) ->
-	{loop, Req, State, hibernate}.
+    {loop, Req, State, hibernate}.
 
 
-terminate(_Reason, _Req, _State) ->
-	ok.
+terminate(_Reason, _Req, #state{worker = Worker}) ->
+    if
+    Worker =/= <<"">> ->
+        Pid = self(),
+        Reg = global:whereis_name(Worker),
+        if Pid =:= Reg ->
+            global:unregister_name(Worker)
+        end
+    end,
+    ok.
 
 
 subtask_feedback(Ls) ->
