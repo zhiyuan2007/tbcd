@@ -97,7 +97,9 @@ handle(Req, State=#state{}) ->
                 Content = jiffy:encode({[{<<"code">>, 0},
                                          {<<"projects">>, Projects}]}),
                 tbcd_reply:reply_json(Req2, State, 200, Content);
-            {_, P} ->
+            {_, <<"">>} ->
+                {error, "project argument is empty"};
+            {_, P} when is_binary(P) ->
                 case project_select(P) of
                 {aborted, _Reason} ->
                     tbcd_reply:reply_plain(Req2, State, 500,
@@ -111,7 +113,9 @@ handle(Req, State=#state{}) ->
                     Content = jiffy:encode({[{<<"code">>, 0},
                                              {<<"workers">>, Rs}]}),
                     tbcd_reply:reply_json(Req2, State, 200, Content)
-                end
+                end;
+            _ ->
+                {error, "project argument is not string"}
             end;
         {_, Mode} ->
             lager:error("invalid mode argument: ~p", [Mode]),
@@ -159,18 +163,24 @@ project_select(P) ->
 
 
 project_delete(Ls) ->
-    Workers = case lists:keyfind(<<"workers">>, 1, Ls) of
-              false ->
-                  [];
-              {_, W} ->
-                  W
-              end,
+    case lists:keyfind(<<"workers">>, 1, Ls) of
+    false ->
+        project_delete(Ls, []);
+    {_, W} when is_list(W) ->
+        project_delete(Ls, W);
+    _ ->
+        {error, "workers argument is not array"}
+    end.
+
+project_delete(Ls, Workers) ->
     WkSet = sets:from_list(Workers),
 
     case lists:keyfind(<<"project">>, 1, Ls) of
     false ->
         {error, "project argument not supplied"};
-    {_, P} ->
+    {_, <<"">>} ->
+        {error, "project argument is empty"};
+    {_, P} when is_binary(P) ->
         F = fun() ->
                 case mnesia:read(project, P) of
                 [] ->
@@ -201,17 +211,24 @@ project_delete(Ls) ->
         {aborted, Reason} ->
             lager:error("delete: mnesia error: ~p", [Reason]),
             {aborted, Reason}
-        end
+        end;
+    _ ->
+        {error, "project argument is not string"}
     end.
 
-project_add(Ls) ->
-    Wk = case lists:keyfind(<<"workers">>, 1, Ls) of
-         false ->
-             [];
-         {_, W} ->
-             W
-         end,
 
+project_add(Ls) ->
+    case lists:keyfind(<<"workers">>, 1, Ls) of
+    false ->
+        project_add(Ls, []);
+    {_, W} when is_list(W) ->
+        project_add(Ls, W);
+    _ ->
+        {error, "workers argument is not array"}
+    end.
+
+
+project_add(Ls, Wk) ->
     %% drop the duplicated
     WkSet = sets:from_list(Wk),
     UWK = sets:to_list(WkSet),
@@ -220,8 +237,8 @@ project_add(Ls) ->
     false ->
         {error, "project argument not supplied"};
     {_, <<"">>} ->
-        {error, "project argument is emtpy"};
-    {_, P} ->
+        {error, "project argument is empty"};
+    {_, P} when is_binary(P) ->
         F = fun() ->
                 case mnesia:read(project, P) of
                 [] ->
@@ -246,5 +263,7 @@ project_add(Ls) ->
         {aborted, Reason} ->
             lager:error("add workers: mnesia error: ~p", [Reason]),
             {aborted, Reason}
-        end
+        end;
+    _ ->
+        {error, "project argument is not string"}
     end.

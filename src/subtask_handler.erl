@@ -65,7 +65,12 @@ init(_, Req, _Opts) ->
                                           <<"worker argument not supplied">>}
                                         ]}),
                 shutdown_json(Req2, 200, Content);
-            {_, W} ->
+            {_, <<"">>} ->
+                Content = jiffy:encode({[{<<"code">>, 1},
+                                         {<<"reason">>,
+                                          <<"worker argument is empty">>}]}),
+                shutdown_json(Req2, 200, Content);
+            {_, W} when is_binary(W) ->
                 case subtask_fetch(W) of
                 {aborted, _Reason} ->
                     Content = <<"Internal server error">>,
@@ -87,7 +92,13 @@ init(_, Req, _Opts) ->
                     Content = jiffy:encode({[{<<"code">>, 0},
                                              {<<"subtasks">>, T}]}),
                     shutdown_json(Req2, 200, Content)
-                end
+                end;
+            _ ->
+                Content = jiffy:encode({[{<<"code">>, 1},
+                                         {<<"reason">>,
+                                          <<"worker argument is not string">>}
+                                        ]}),
+                shutdown_json(Req2, 200, Content)
             end;
         _ ->
             Content = jiffy:encode({[{<<"code">>, 1},
@@ -146,18 +157,26 @@ subtask_feedback(Ls) ->
         jiffy:encode({[{<<"code">>, 1},
                        {<<"reason">>,
                         <<"worker argument not supplied">>}]});
-    {_, W} ->
+    {_, <<"">>} ->
+         jiffy:encode({[{<<"code">>, 1},
+                       {<<"reason">>,
+                        <<"worker argument is empty">>}]});
+    {_, W} when is_binary(W) ->
         case lists:keyfind(<<"subtasks">>, 1, Ls) of
         false ->
             jiffy:encode({[{<<"code">>, 1},
                            {<<"reason">>,
                             <<"subtasks argument not supplied">>}]});
+        {_, []} ->
+            jiffy:encode({[{<<"code">>, 1},
+                           {<<"reason">>,
+                            <<"subtasks argument is empty">>}]});
         {_, S} when is_list(S) ->
             case subtask_feedback(W, S) of
             true ->
                 jiffy:encode({[{<<"code">>, 0}]});
             {false, Reason} ->
-                jiffy:encode({[{<<"code">>, 0}, {<<"reason">>, Reason}]});
+                jiffy:encode({[{<<"code">>, 1}, {<<"reason">>, Reason}]});
             error ->
                 jiffy:encode({[{<<"code">>, 1}, {<<"reason">>,
                                                  <<"process failed">>}]});
@@ -179,18 +198,23 @@ subtask_feedback(Worker, [{Subtask} | L]) ->
     case lists:keyfind(<<"tid">>, 1, Subtask) of
     false ->
         {false, "tid argument not supplied"};
-    {_, Tid} ->
+    {_, <<"">>} ->
+        {false, "tid argument is empty"};
+    {_, Tid} when is_binary(Tid) ->
         case lists:keyfind(<<"result">>, 1, Subtask) of
         false ->
             {false, "result argument not supplied"};
         {_, Result} ->
+            %% Result can be anything
             case subtask_feedback(Worker, Tid, Result) of
             true ->
                 subtask_feedback(Worker, L);
             error ->
                 error
             end
-        end
+        end;
+    _ ->
+        {false, "tid argument is not string"}
     end;
 subtask_feedback(_, _) ->
     false.

@@ -108,7 +108,9 @@ task_select(Ls) ->
     case lists:keyfind(<<"tids">>, 1, Ls) of
     false ->
         {error, "tids argument not supplied"};
-    {_, TIDS} ->
+    {_, []} ->
+        {error, "tids argument is empty array"};
+    {_, TIDS} when is_list(TIDS) ->
         lager:info("tids: ~p", [TIDS]),
         F = fun(Id) ->
                 case mnesia:dirty_read(task_count, Id) of
@@ -125,67 +127,73 @@ task_select(Ls) ->
                       {<<"status">>, list_to_binary(integer_to_list(Count))}]}
                 end
             end,
-        lists:map(F, TIDS)
+        lists:map(F, TIDS);
+    _ ->
+        {error, "tids argument is not array"}
     end.
 
 
 task_add(Ls) ->
-    Project = case lists:keyfind(<<"project">>, 1, Ls) of
-              false ->
-                  false;
-              {_, P} ->
-                  P
-              end,
+    case lists:keyfind(<<"project">>, 1, Ls) of
+    {_, <<"">>} ->
+        {error, "project argument is empty"};
+    {_, P} when is_binary(P) ->
+        task_add(Ls, P);
+    false ->
+        {error, "project argument not supplied"};
+    _ ->
+        {error, "project argument is not string"}
+    end.
 
-    Content = case lists:keyfind(<<"content">>, 1, Ls) of
-              false ->
-                  false;
-              {_, C} ->
-                  C
-              end,
 
-    Callback = case lists:keyfind(<<"callback">>, 1, Ls) of
-               false ->
-                   undefined;
-               {_, CL} ->
-                   CL
-               end,
+task_add(Ls, Project) ->
+    case lists:keyfind(<<"content">>, 1, Ls) of
+    false ->
+        {error, "content argument not supplied"};
+    {_, C} ->
+        %% content can be anything
+        task_add(Ls, Project, C)
+    end.
 
+
+task_add(Ls, Project, Content) ->
+    case lists:keyfind(<<"callback">>, 1, Ls) of
+    false ->
+        task_add2(Project, Content, undefined);
+    {_, <<"">>} ->
+        {error, "callback argument is empty string"};
+    {_, <<"http://", _Tail/binary>> = CL} ->
+        task_add2(Project, Content, CL);
+    _ ->
+        {error, "callback argument is invalid"}
+    end.
+
+
+task_add2(Project, Content, Callback) ->
     lager:info("add: project: ~p, content: ~p, callback: ~p",
                [Project, Content, Callback]),
 
-    case {Project, Content} of
-    {false, _} ->
-        {error, "project argument not supplied"};
-    {<<"">>, _} ->
-        {error, "project argument is empty"};
-    {_, false} ->
-        {error, "content argument not supplied"};
-    {_, <<"">>} ->
-        {error, "content argument is empty"};
-    {_, _} ->
-        case mnesia:dirty_read(project, Project) of
-        [] ->
-            {error, "invalid project"};
-        _ ->
-            Tid = list_to_binary(uuid:to_string(uuid:uuid1())),
+    case mnesia:dirty_read(project, Project) of
+    [] ->
+        {error, "invalid project"};
+    _ ->
+        Tid = list_to_binary(uuid:to_string(uuid:uuid1())),
 
-            lager:info("add: taskid: ~p", [Tid]),
+        lager:info("add: taskid: ~p", [Tid]),
 
-            F = fun() ->
-                    mnesia:write(#task{tid = Tid,
-                                       project = Project,
-                                       content = Content,
-                                       callback = Callback,
-                                       timestamp = now()})
-                end,
-            case mnesia:transaction(F) of
-            {atomic, _Rs} ->
-                tbcd_subtask:get_proc() ! {new, Tid, Project},
-                Tid;
-            {aborted, Reason} ->
-                lager:error("add: mnesia error: ~p", [Reason]),
-                {aborted, Reason}
-            end
+        F = fun() ->
+                mnesia:write(#task{tid = Tid,
+                                   project = Project,
+                                   content = Content,
+                                   callback = Callback,
+                                   timestamp = now()})
+            end,
+        case mnesia:transaction(F) of
+        {atomic, _Rs} ->
+            tbcd_subtask:get_proc() ! {new, Tid, Project},
+            Tid;
+        {aborted, Reason} ->
+            lager:error("add: mnesia error: ~p", [Reason]),
+            {aborted, Reason}
         end
     end.
