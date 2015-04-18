@@ -55,8 +55,16 @@ init(_, Req, _Opts) ->
                                       <<"mode argument not supplied">>}]}),
             shutdown_json(Req2, 200, Content);
         {_, <<"feedback">>} ->
-            Content = subtask_feedback(Ls),
-            shutdown_json(Req2, 200, Content);
+            case subtask_feedback(Ls) of
+            {error, Reason} ->
+                Content = jiffy:encode({[{<<"code">>, 1},
+                                         {<<"reason">>,
+                                          list_to_binary(Reason)}]}),
+                shutdown_json(Req2, 200, Content);
+            ok ->
+                Content = jiffy:encode({[{<<"code">>, 0}]}),
+                shutdown_json(Req2, 200, Content)
+            end;
         {_, <<"fetch">>} ->
             case lists:keyfind(<<"worker">>, 1, Ls) of
             false ->
@@ -154,40 +162,28 @@ terminate(_Reason, _Req, #state{worker = Worker}) ->
 subtask_feedback(Ls) ->
     case lists:keyfind(<<"worker">>, 1, Ls) of
     false ->
-        jiffy:encode({[{<<"code">>, 1},
-                       {<<"reason">>,
-                        <<"worker argument not supplied">>}]});
+        {error, "worker argument not supplied"};
     {_, <<"">>} ->
-         jiffy:encode({[{<<"code">>, 1},
-                       {<<"reason">>,
-                        <<"worker argument is empty">>}]});
+        {error, "worker argument is empty"};
     {_, W} when is_binary(W) ->
         case lists:keyfind(<<"subtasks">>, 1, Ls) of
         false ->
-            jiffy:encode({[{<<"code">>, 1},
-                           {<<"reason">>,
-                            <<"subtasks argument not supplied">>}]});
+            {error, "subtasks argument not supplied"};
         {_, []} ->
-            jiffy:encode({[{<<"code">>, 1},
-                           {<<"reason">>,
-                            <<"subtasks argument is empty">>}]});
+            {error, "subtasks argument is empty"};
         {_, S} when is_list(S) ->
             case subtask_feedback(W, S) of
             true ->
-                jiffy:encode({[{<<"code">>, 0}]});
+                ok;
             {false, Reason} ->
-                jiffy:encode({[{<<"code">>, 1}, {<<"reason">>, Reason}]});
+                {error, Reason};
             error ->
-                jiffy:encode({[{<<"code">>, 1}, {<<"reason">>,
-                                                 <<"process failed">>}]});
+                {error, "process failed"};
             _ ->
-                jiffy:encode({[{<<"code">>, 1}, {<<"reason">>,
-                                                 <<"invalid subtask">>}]})
+                {error, "invalid subtask"}
             end;
         _ ->
-            jiffy:encode({[{<<"code">>, 1},
-                           {<<"reason">>,
-                            <<"subtasks argument must be a array">>}]})
+            {error, "subtasks argument must be a array"}
         end
     end.
 
