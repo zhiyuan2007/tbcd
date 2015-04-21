@@ -93,7 +93,9 @@ handle_request(Req) ->
                     Content = <<"Internal server error">>,
                     shutdown_plain(Req2, 500, Content);
                 reply ->
-                    shutdown_plain(Req2, 204, <<"">>);
+                    Content = jiffy:encode({[{<<"code">>, 0},
+                                             {<<"subtasks">>, []}]}),
+                    shutdown_json(Req2, 200, Content);
                 [] ->
                     %% now no subtask
                     case global:register_name(W, self()) of
