@@ -79,10 +79,12 @@ init(_, Req, _Opts) ->
                                           <<"worker argument is empty">>}]}),
                 shutdown_json(Req2, 200, Content);
             {_, W} when is_binary(W) ->
-                case subtask_fetch(W) of
+                case subtask_fetch(Ls, W) of
                 {aborted, _Reason} ->
                     Content = <<"Internal server error">>,
                     shutdown_plain(Req2, 500, Content);
+                reply ->
+                    shutdown_plain(Req2, 204, <<"">>);
                 [] ->
                     %% now no subtask
                     case global:register_name(W, self()) of
@@ -242,6 +244,64 @@ subtask_feedback(Worker, Tid, Result) ->
     end.
 
 
+subtask_fetch(Ls, Worker) ->
+    case lists:keyfind(<<"project">>, 1, Ls) of
+    false ->
+        subtask_fetch(Worker);
+    {_, <<"">>} ->
+        subtask_fetch(Worker); 
+    {_, Project} when is_binary(Project) ->
+        case subtask_fetch_with_project(Worker, Project) of
+        [] ->
+            reply;
+        R ->
+            R
+        end
+    end.
+    
+
+subtask_fetch_with_project(Worker, Project) ->
+    F = fun() ->
+            MatchHead = #subtask{sid = {'$1', Worker}, _ = '_'},
+            Guard = [],
+            Result = '$_',
+            case mnesia:select(unfetched_subtask,
+                               [{MatchHead, Guard, [Result]}],
+                               10,
+                               read) of
+            {Es, _Cont} ->
+                F2 = fun(E) ->
+                         {Tid, _} = E#subtask.sid,
+                         [Task] = mnesia:read(task, Tid),
+
+                         case Task#task.project of
+                         Project ->
+                             mnesia:write(fetched_subtask, E, write),
+                             mnesia:delete({unfetched_subtask, E#subtask.sid}),
+
+                             lager:info("fetched task: ~p", [Task]),
+                             {true, {[{<<"tid">>, Tid},
+                                      {<<"project">>, Task#task.project},
+                                      {<<"content">>, Task#task.content}]}};
+                         _ ->
+                             false
+                         end
+                     end,
+                lists:filtermap(F2, Es);
+            '$end_of_table' ->
+                []
+            end
+        end,
+    case mnesia:transaction(F) of
+    {atomic, Rs} ->
+        lager:info("fetched success: ~p", [Rs]),
+        Rs;
+    {aborted, Reason} ->
+        lager:error("mnesia error: ~p", [Reason]),
+        {aborted, Reason}
+    end.
+
+    
 subtask_fetch(Worker) ->
     F = fun() ->
             MatchHead = #subtask{sid = {'$1', Worker}, _ = '_'},
