@@ -46,6 +46,15 @@ init(_, Req, _Opts) ->
 
 
 handle(Req, State=#state{}) ->
+    case tbcd_validation:valid_request(Req) of
+    {yes, Req2} ->
+        handle_request(Req2, State);
+    {no, Req2} ->
+        tbcd_reply:reply_plain(Req2, State, 403, <<"access forbidden">>)
+    end.
+
+
+handle_request(Req, State) ->
     {ok, Body, Req2} = cowboy_req:body(Req),
 
     lager:info("body: ~p", [Body]),

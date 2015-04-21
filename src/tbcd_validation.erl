@@ -24,11 +24,12 @@
 %%% OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
 %%% SUCH DAMAGE.
 %%%
--module(tbcd_acl).
+-module(tbcd_validation).
 -author('flygoast@126.com').
 
 
--export([acl_start/0,
+-export([valid_request/1,
+         acl_start/0,
          acl_allow/1,
          acl_add/1,
          acl_del/1,
@@ -78,3 +79,22 @@ acl_del(IP) ->
 
 acl_real_del(IP) ->
     mnesia:dirty_delete(acl, IP).
+
+
+valid_request(Req) ->
+    {Method, Req2} = cowboy_req:method(Req),
+
+    case Method of
+    <<"POST">> ->
+        {{IP, Port}, Req3} = cowboy_req:peer(Req2),
+        case acl_allow(IP) of
+        no ->
+            lager:info("request forbidden: from ~p:~p", [IP, Port]),
+            {no, Req3};
+        yes ->
+            {yes, Req3}
+        end;
+    _ ->
+        lager:info("request forbidden: method ~p", [Method]),
+        {no, Req2}
+    end.
