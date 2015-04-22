@@ -37,7 +37,8 @@
 -include("tbcd.hrl").
 
 
--record(state, {worker = <<"">> :: binary()}).
+-record(state, {worker = <<"">> :: binary(),
+                project = <<"">> :: binary()}).
 
 
 init(_, Req, _Opts) ->
@@ -92,17 +93,33 @@ handle_request(Req) ->
                 {aborted, _Reason} ->
                     Content = <<"Internal server error">>,
                     shutdown_plain(Req2, 500, Content);
-                reply ->
-                    Content = jiffy:encode({[{<<"code">>, 0},
-                                             {<<"subtasks">>, []}]}),
-                    shutdown_json(Req2, 200, Content);
-                [] ->
-                    %% now no subtask
-                    case global:register_name(W, self()) of
+                {wait, P} ->
+                    case tbcd_register:register(W, P) of
                     yes ->
                         %% wait for subtasks arrived or timeout
-    	                {loop, Req2, #state{worker = W}, 30000, hibernate};
-                    no ->
+                        {loop, Req2, #state{worker = W, project = P}, 30000,
+                         hibernate};
+                    project ->
+                        Content = jiffy:encode({[{<<"code">>, 1},
+                                                 {<<"reason">>,
+                                                  <<"worker for this project "
+                                                    "been registered">>}
+                                                ]}),
+                        shutdown_json(Req2, 200, Content);
+                    all ->
+                        Content = jiffy:encode({[{<<"code">>, 1},
+                                                 {<<"reason">>,
+                                                  <<"worker for all projects "
+                                                    "been registered">>}
+                                                ]}),
+                        shutdown_json(Req2, 200, Content)
+                    end;
+                [] ->
+                    case tbcd_register:register(W) of
+                    yes ->
+                        %% wait for subtasks arrived or timeout
+                        {loop, Req2, #state{worker = W}, 30000, hibernate};
+                    other ->
                         Content = jiffy:encode({[{<<"code">>, 1},
                                                  {<<"reason">>,
                                                   <<"worker been registered">>}
@@ -155,18 +172,12 @@ info(_Info, Req, State) ->
     {loop, Req, State, hibernate}.
 
 
-terminate(_Reason, _Req, #state{worker = Worker}) ->
+terminate(_Reason, _Req, #state{worker = Worker, project = Project}) ->
     case Worker of
     <<"">> ->
         null;
     _ ->
-        Pid = self(),
-        case global:whereis_name(Worker) of
-        Pid ->
-            global:unregister_name(Worker);
-        _ ->
-            null
-        end
+        tbcd_register:unregister(Worker, Project)
     end,
 
     ok.
@@ -266,7 +277,7 @@ subtask_fetch(Ls, Worker) ->
     {_, Project} when is_binary(Project) ->
         case subtask_fetch_with_project(Worker, Project) of
         [] ->
-            reply;
+            {wait, Project};
         R ->
             R
         end

@@ -100,10 +100,8 @@ URI: `/subtask`
 
 #### Fetch subtasks
 
-When 'project' parameter supplied, only the tasks belong to the project
-would be dispatched. When 'project' parameter not supplied and no subtasks
-can be dispatched and tbcd would hanged the request to some subtasks
-is ready or timeout. When timeout, HTTP code 204 would be returned.
+When no subtasks can be dispatched, tbcd would hanged the request to some
+subtasks is ready or timeout. When timeout, HTTP code 204 would be returned.
 
 ##### Request
 ```json
