@@ -197,7 +197,9 @@ subtask_feedback(Ls) ->
             end;
         _ ->
             {error, "subtasks argument must be a array"}
-        end
+        end;
+    _ ->
+        {error, "workers argument is not string"}
     end.
 
 
@@ -260,7 +262,7 @@ subtask_fetch(Ls, Worker) ->
     false ->
         subtask_fetch(Worker);
     {_, <<"">>} ->
-        subtask_fetch(Worker); 
+        subtask_fetch(Worker);
     {_, Project} when is_binary(Project) ->
         case subtask_fetch_with_project(Worker, Project) of
         [] ->
@@ -269,7 +271,7 @@ subtask_fetch(Ls, Worker) ->
             R
         end
     end.
-    
+
 
 subtask_fetch_with_project(Worker, Project) ->
     F = fun() ->
@@ -312,7 +314,7 @@ subtask_fetch_with_project(Worker, Project) ->
         {aborted, Reason}
     end.
 
-    
+
 subtask_fetch(Worker) ->
     F = fun() ->
             MatchHead = #subtask{sid = {'$1', Worker}, _ = '_'},
