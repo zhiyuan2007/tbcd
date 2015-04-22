@@ -1,19 +1,19 @@
 {application, tbcd, [
-	{description, ""},
-	{vsn, "0.3.0"},
-	{id, "git"},
-	{modules, []},
-	{registered, []},
-	{applications, [
-		kernel,
-		stdlib,
+    {description, ""},
+    {vsn, "0.3.0"},
+    {id, "git"},
+    {modules, []},
+    {registered, []},
+    {applications, [
+        kernel,
+        stdlib,
         inets,
         mnesia,
         uuid,
         jiffy,
         cowboy,
         lager
-	]},
-	{mod, {tbcd_app, []}},
-	{env, []}
+    ]},
+    {mod, {tbcd_app, []}},
+    {env, []}
 ]}.

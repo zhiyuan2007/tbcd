@@ -42,7 +42,7 @@
 
 
 init(_, Req, _Opts) ->
-	{ok, Req, #state{}}.
+    {ok, Req, #state{}}.
 
 
 handle(Req, State=#state{}) ->
@@ -142,7 +142,7 @@ handle_request(Req, State) ->
 
 
 terminate(_Reason, _Req, _State) ->
-	ok.
+    ok.
 
 
 project_select() ->
