@@ -32,8 +32,10 @@
 -export([start_link/0]).
 -export([init/1]).
 
+
 start_link() ->
     supervisor:start_link({local, ?MODULE}, ?MODULE, []).
+
 
 init([]) ->
     SubtaskChildSpec = {
@@ -44,6 +46,16 @@ init([]) ->
         worker,
         [tbcd_subtak]
     },
-    Procs = [SubtaskChildSpec],
+
+    RegisterChildSpec = {
+        tbcd_register,
+        {tbcd_register, start_link, []},
+        permanent,
+        brutal_kill,
+        worker,
+        [tbcd_register]
+    },
+
+    Procs = [SubtaskChildSpec, RegisterChildSpec],
 
     {ok, {{one_for_one, 1, 5}, Procs}}.
