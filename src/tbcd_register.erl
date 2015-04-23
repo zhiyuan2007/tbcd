@@ -109,10 +109,12 @@ handle_call({register, Worker, Project}, {Pid, _}, State) ->
                 NewProDict = dict:store(Project, Pid, ProDict),
                 NewDict = dict:store(Worker, NewProDict, Dict),
                 {reply, yes, State#state{dict = NewDict}};
-            {ok, Pid} ->
+            {ok, P} ->
+                lager:info("registered, project: ~p, pid: ~p", [Project, P]),
                 {reply, project, State}
             end;
-        {ok, Pid} ->
+        {ok, P} ->
+            lager:info("registered, project: all, pid: ~p", [P]),
             {reply, all, State}
         end
     end;
@@ -133,8 +135,14 @@ handle_call({unregister, Worker, Project}, {Pid, _}, State) ->
                 {reply, ok, State};
             {ok, Pid} ->
                 NewProDict = dict:erase(Project, ProDict),
-                NewDict = dict:store(Worker, NewProDict, Dict),
-                {reply, ok, State#state{dict = NewDict}}
+                case dict:size(NewProDict) of
+                0 ->
+                    NewDict = dict:erase(Worker, Dict),
+                    {reply, ok, State#state{dict = NewDict}};
+                _ ->
+                    NewDict = dict:store(Worker, NewProDict, Dict),
+                    {reply, ok, State#state{dict = NewDict}}
+                end
             end
         end
     end;
