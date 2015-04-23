@@ -43,9 +43,9 @@ init(_, Req, _Opts) ->
 
 handle(Req, State=#state{}) ->
     case tbcd_validation:valid_request(Req) of
-    {yes, Req2} ->
+    {yes, _Body, Req2} ->
         handle_request(Req2, State);
-    {no, Req2} ->
+    {no, _, Req2} ->
         tbcd_reply:reply_plain(Req2, State, 403, <<"access forbidden">>)
     end.
 

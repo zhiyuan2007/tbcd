@@ -47,18 +47,14 @@ init(_, Req, _Opts) ->
 
 handle(Req, State=#state{}) ->
     case tbcd_validation:valid_request(Req) of
-    {yes, Req2} ->
-        handle_request(Req2, State);
-    {no, Req2} ->
+    {yes, Body,  Req2} ->
+        handle_request(Req2, Body, State);
+    {no, _, Req2} ->
         tbcd_reply:reply_plain(Req2, State, 403, <<"access forbidden">>)
     end.
 
 
-handle_request(Req, State) ->
-    {ok, Body, Req2} = cowboy_req:body(Req),
-
-    lager:info("body: ~p", [Body]),
-
+handle_request(Req, Body, State) ->
     case catch jiffy:decode(Body) of
     {Ls} ->
         case lists:keyfind(<<"mode">>, 1, Ls) of
@@ -68,35 +64,35 @@ handle_request(Req, State) ->
                                      {<<"reason">>,
                                       <<"mode argument not supplied">>}
                                     ]}),
-            tbcd_reply:reply_json(Req2, State, 200, Content);
+            tbcd_reply:reply_json(Req, State, 200, Content);
         {_, <<"add">>} ->
             case project_add(Ls) of
             {aborted, _Reason} ->
-                tbcd_reply:reply_plain(Req2, State, 500,
+                tbcd_reply:reply_plain(Req, State, 500,
                                        <<"Internal server error">>);
             {error, Reason} ->
                 Content = jiffy:encode({[{<<"code">>, 1},
                                          {<<"reason">>,
                                           list_to_binary(Reason)}
                                         ]}),
-                tbcd_reply:reply_json(Req2, State, 200, Content);
+                tbcd_reply:reply_json(Req, State, 200, Content);
             ok ->
                 Content = jiffy:encode({[{<<"code">>, 0}]}),
-                tbcd_reply:reply_json(Req2, State, 200, Content)
+                tbcd_reply:reply_json(Req, State, 200, Content)
             end;
         {_, <<"delete">>} ->
             case project_delete(Ls) of
             {aborted, _Reason} ->
-                tbcd_reply:reply_plain(Req2, State, 500,
+                tbcd_reply:reply_plain(Req, State, 500,
                                        <<"Internal server error">>);
             {error, Reason} ->
                 Content = jiffy:encode({[{<<"code">>, 1},
                                          {<<"reason">>,
                                           list_to_binary(Reason)}]}),
-                tbcd_reply:reply_json(Req2, State, 200, Content);
+                tbcd_reply:reply_json(Req, State, 200, Content);
             ok ->
                 Content = jiffy:encode({[{<<"code">>, 0}]}),
-                tbcd_reply:reply_json(Req2, State, 200, Content)
+                tbcd_reply:reply_json(Req, State, 200, Content)
             end;
         {_, <<"select">>} ->
             case lists:keyfind(<<"project">>, 1, Ls) of
@@ -105,23 +101,23 @@ handle_request(Req, State) ->
                 lager:info("get all projects: ~p", [Projects]),
                 Content = jiffy:encode({[{<<"code">>, 0},
                                          {<<"projects">>, Projects}]}),
-                tbcd_reply:reply_json(Req2, State, 200, Content);
+                tbcd_reply:reply_json(Req, State, 200, Content);
             {_, <<"">>} ->
                 {error, "project argument is empty"};
             {_, P} when is_binary(P) ->
                 case project_select(P) of
                 {aborted, _Reason} ->
-                    tbcd_reply:reply_plain(Req2, State, 500,
+                    tbcd_reply:reply_plain(Req, State, 500,
                                            <<"Internal server error">>);
                 {error, Reason} ->
                     Content = jiffy:encode({[{<<"code">>, 1},
                                              {<<"reason">>,
                                               list_to_binary(Reason)}]}),
-                    tbcd_reply:reply_json(Req2, State, 200, Content);
+                    tbcd_reply:reply_json(Req, State, 200, Content);
                 Rs ->
                     Content = jiffy:encode({[{<<"code">>, 0},
                                              {<<"workers">>, Rs}]}),
-                    tbcd_reply:reply_json(Req2, State, 200, Content)
+                    tbcd_reply:reply_json(Req, State, 200, Content)
                 end;
             _ ->
                 {error, "project argument is not string"}
@@ -131,13 +127,13 @@ handle_request(Req, State) ->
             Content = jiffy:encode({[{<<"code">>, 1},
                                      {<<"reason">>,
                                       <<"invalid mode argument">>}]}),
-            tbcd_reply:reply_json(Req2, State, 200, Content)
+            tbcd_reply:reply_json(Req, State, 200, Content)
         end;
     {error, Reason} ->
         lager:info("invalid json: ~p", [Reason]),
         Content = jiffy:encode({[{<<"code">>, 1},
                                  {<<"reason">>, <<"invalid json">>}]}),
-        tbcd_reply:reply_json(Req2, State, 200, Content)
+        tbcd_reply:reply_json(Req, State, 200, Content)
     end.
 
 
