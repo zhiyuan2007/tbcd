@@ -87,7 +87,7 @@ handle_info({new, Tid, Project}, State) ->
                                   mnesia:write(unfetched_subtask, ST,
                                                write),
 
-                                  case global:whereis_name(Ele) of
+                                  case tbcd_register:registered(Ele, Project) of
                                   undefined ->
                                       ok;
                                   Pid ->

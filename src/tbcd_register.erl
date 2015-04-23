@@ -37,7 +37,8 @@
 -export([start_link/0,
          register/1,
          register/2,
-         unregister/2]).
+         unregister/2,
+         registered/2]).
 
 
 %% gen_server callbacks
@@ -66,6 +67,10 @@ register(Worker, Project) ->
 
 unregister(Worker, Project) ->
     gen_server:call({global, ?MODULE}, {unregister, Worker, Project}).
+
+
+registered(Worker, Project) ->
+    gen_server:call({global, ?MODULE}, {registered, Worker, Project}).
 
 
 %%================================================
@@ -144,6 +149,25 @@ handle_call({unregister, Worker, Project}, {Pid, _}, State) ->
                     {reply, ok, State#state{dict = NewDict}}
                 end
             end
+        end
+    end;
+handle_call({registered, Worker, Project}, _From, State) ->
+    Dict = State#state.dict,
+
+    case dict:find(Worker, Dict) of
+    error ->
+        {reply, undefined, State};
+    {ok, ProDict} ->
+        case dict:find(Project, ProDict) of
+        error ->
+            case dict:find(all, ProDict) of
+            error ->
+                {reply, undefined, State};
+            {ok, Pid} ->
+                {reply, Pid, State}
+            end;
+        {ok, Pid} ->
+            {reply, Pid, State}
         end
     end;
 handle_call(_Request, _From, State) ->
