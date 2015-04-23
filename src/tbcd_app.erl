@@ -53,7 +53,7 @@ start(_Type, _Args) ->
                                               {"/[...]", default_handler, []}
                                              ]}
                                      ]),
-    tbcd_validation:acl_start(),
+    tbcd_validation:start(),
 
     cowboy:start_http(my_http_listener, 100, [{port, Port}],
                       [{env, [{dispatch, Dispatch}]}]),

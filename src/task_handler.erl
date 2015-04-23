@@ -46,18 +46,14 @@ init(_, Req, _Opts) ->
 
 handle(Req, State=#state{}) ->
     case tbcd_validation:valid_request(Req) of
-    {yes, Req2} ->
-        handle_request(Req2, State);
-    {no, Req2} ->
+    {yes, Body, Req2} ->
+        handle_request(Req2, Body, State);
+    {no, _, Req2} ->
         tbcd_reply:reply_plain(Req2, State, 403, <<"access forbidden">>)
     end.
 
 
-handle_request(Req, State) ->
-    {ok, Body, Req2} = cowboy_req:body(Req),
-
-    lager:info("body: ~p", [Body]),
-
+handle_request(Req, Body, State) ->
     case catch jiffy:decode(Body) of
     {Ls} ->
         case lists:keyfind(<<"mode">>, 1, Ls) of
@@ -66,21 +62,21 @@ handle_request(Req, State) ->
             Content = jiffy:encode({[{<<"code">>, 1},
                                      {<<"reason">>,
                                       <<"mode argument not supplied">>}]}),
-            tbcd_reply:reply_json(Req2, State, 200, Content);
+            tbcd_reply:reply_json(Req, State, 200, Content);
         {_, <<"add">>} ->
             case task_add(Ls) of
             {aborted, _Reason} ->
-                tbcd_reply:reply_plain(Req2, State, 500,
+                tbcd_reply:reply_plain(Req, State, 500,
                                        <<"Internal server error">>);
             {error, Reason} ->
                 Content = jiffy:encode({[{<<"code">>, 1},
                                          {<<"reason">>,
                                           list_to_binary(Reason)}]}),
-                tbcd_reply:reply_json(Req2, State, 200, Content);
+                tbcd_reply:reply_json(Req, State, 200, Content);
             Tid ->
                 Content = jiffy:encode({[{<<"code">>, 0},
                                          {<<"tid">>, Tid}]}),
-                tbcd_reply:reply_json(Req2, State, 200, Content)
+                tbcd_reply:reply_json(Req, State, 200, Content)
             end;
         {_, <<"select">>} ->
             case task_select(Ls) of
@@ -88,24 +84,24 @@ handle_request(Req, State) ->
                 Content = jiffy:encode({[{<<"code">>, 1},
                                          {<<"reason">>,
                                           list_to_binary(Reason)}]}),
-                tbcd_reply:reply_json(Req2, State, 200, Content);
+                tbcd_reply:reply_json(Req, State, 200, Content);
             Rs ->
                 Content = jiffy:encode({[{<<"code">>, 0}, {<<"tasks">>, Rs}]}),
                 lager:info("select result: ~p", [Content]),
-                tbcd_reply:reply_json(Req2, State, 200, Content)
+                tbcd_reply:reply_json(Req, State, 200, Content)
             end;
         {_, Mode} ->
             lager:error("invalid mode argument: ~p", [Mode]),
             Content = jiffy:encode({[{<<"code">>, 1},
                                      {<<"reason">>,
                                       <<"invalid mode argument">>}]}),
-            tbcd_reply:reply_json(Req2, State, 200, Content)
+            tbcd_reply:reply_json(Req, State, 200, Content)
         end;
     {error, Error} ->
         lager:info("invalid json: ~p", [Error]),
         Content = jiffy:encode({[{<<"code">>, 1},
                                  {<<"reason">>, <<"invalid json">>}]}),
-        tbcd_reply:reply_json(Req2, State, 200, Content)
+        tbcd_reply:reply_json(Req, State, 200, Content)
     end.
 
 
@@ -186,7 +182,7 @@ task_add2(Project, Content, Callback) ->
     [] ->
         {error, "invalid project"};
     _ ->
-        Tid = list_to_binary(uuid:to_string(uuid:uuid1())),
+        Tid = list_to_binary(uuid:to_string(simple, uuid:uuid1())),
 
         lager:info("add: taskid: ~p", [Tid]),
 

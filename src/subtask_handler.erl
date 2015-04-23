@@ -43,18 +43,14 @@
 
 init(_, Req, _Opts) ->
     case tbcd_validation:valid_request(Req) of
-    {yes, Req2} ->
-        handle_request(Req2);
-    {no, Req2} ->
+    {yes, Body, Req2} ->
+        handle_request(Req2, Body);
+    {no, _, Req2} ->
         shutdown_plain(Req2, 403, <<"access forbidden">>)
     end.
 
 
-handle_request(Req) ->
-    {ok, Body, Req2} = cowboy_req:body(Req),
-
-    lager:info("body: ~p", [Body]),
-
+handle_request(Req, Body) ->
     case catch jiffy:decode(Body) of
     {Ls} ->
         case lists:keyfind(<<"mode">>, 1, Ls) of
@@ -63,17 +59,17 @@ handle_request(Req) ->
             Content = jiffy:encode({[{<<"code">>, 1},
                                      {<<"reason">>,
                                       <<"mode argument not supplied">>}]}),
-            shutdown_json(Req2, 200, Content);
+            shutdown_json(Req, 200, Content);
         {_, <<"feedback">>} ->
             case subtask_feedback(Ls) of
             {error, Reason} ->
                 Content = jiffy:encode({[{<<"code">>, 1},
                                          {<<"reason">>,
                                           list_to_binary(Reason)}]}),
-                shutdown_json(Req2, 200, Content);
+                shutdown_json(Req, 200, Content);
             ok ->
                 Content = jiffy:encode({[{<<"code">>, 0}]}),
-                shutdown_json(Req2, 200, Content)
+                shutdown_json(Req, 200, Content)
             end;
         {_, <<"fetch">>} ->
             case lists:keyfind(<<"worker">>, 1, Ls) of
@@ -82,22 +78,22 @@ handle_request(Req) ->
                                          {<<"reason">>,
                                           <<"worker argument not supplied">>}
                                         ]}),
-                shutdown_json(Req2, 200, Content);
+                shutdown_json(Req, 200, Content);
             {_, <<"">>} ->
                 Content = jiffy:encode({[{<<"code">>, 1},
                                          {<<"reason">>,
                                           <<"worker argument is empty">>}]}),
-                shutdown_json(Req2, 200, Content);
+                shutdown_json(Req, 200, Content);
             {_, W} when is_binary(W) ->
                 case subtask_fetch(Ls, W) of
                 {aborted, _Reason} ->
                     Content = <<"Internal server error">>,
-                    shutdown_plain(Req2, 500, Content);
+                    shutdown_plain(Req, 500, Content);
                 {wait, P} ->
                     case tbcd_register:register(W, P) of
                     yes ->
                         %% wait for subtasks arrived or timeout
-                        {loop, Req2, #state{worker = W, project = P}, 30000,
+                        {loop, Req, #state{worker = W, project = P}, 30000,
                          hibernate};
                     project ->
                         Content = jiffy:encode({[{<<"code">>, 1},
@@ -105,50 +101,50 @@ handle_request(Req) ->
                                                   <<"worker for this project "
                                                     "been registered">>}
                                                 ]}),
-                        shutdown_json(Req2, 200, Content);
+                        shutdown_json(Req, 200, Content);
                     all ->
                         Content = jiffy:encode({[{<<"code">>, 1},
                                                  {<<"reason">>,
                                                   <<"worker for all projects "
                                                     "been registered">>}
                                                 ]}),
-                        shutdown_json(Req2, 200, Content)
+                        shutdown_json(Req, 200, Content)
                     end;
                 [] ->
                     case tbcd_register:register(W) of
                     yes ->
                         %% wait for subtasks arrived or timeout
-                        {loop, Req2, #state{worker = W}, 30000, hibernate};
+                        {loop, Req, #state{worker = W}, 30000, hibernate};
                     other ->
                         Content = jiffy:encode({[{<<"code">>, 1},
                                                  {<<"reason">>,
                                                   <<"worker been registered">>}
                                                 ]}),
-                        shutdown_json(Req2, 200, Content)
+                        shutdown_json(Req, 200, Content)
                     end;
                 T ->
                     Content = jiffy:encode({[{<<"code">>, 0},
                                              {<<"subtasks">>, T}]}),
-                    shutdown_json(Req2, 200, Content)
+                    shutdown_json(Req, 200, Content)
                 end;
             _ ->
                 Content = jiffy:encode({[{<<"code">>, 1},
                                          {<<"reason">>,
                                           <<"worker argument is not string">>}
                                         ]}),
-                shutdown_json(Req2, 200, Content)
+                shutdown_json(Req, 200, Content)
             end;
         _ ->
             Content = jiffy:encode({[{<<"code">>, 1},
                                       {<<"reason">>,
                                        <<"invalid mode argument">>}]}),
-            shutdown_json(Req2, 200, Content)
+            shutdown_json(Req, 200, Content)
         end;
     {error, Error} ->
         lager:info("invalid json: ~p", [Error]),
         Content = jiffy:encode({[{<<"code">>, 1},
                                  {<<"reason">>, <<"invalid json">>}]}),
-        shutdown_json(Req2, 200, Content)
+        shutdown_json(Req, 200, Content)
     end.
 
 

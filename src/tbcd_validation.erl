@@ -28,15 +28,38 @@
 -author('flygoast@126.com').
 
 
--export([valid_request/1,
-         acl_start/0,
+-export([start/0,
+         valid_request/1,
          acl_allow/1,
          acl_add/1,
          acl_del/1,
-         acl_real_del/1]).
+         acl_real_del/1,
+         sign_add/2,
+         sign_get/1,
+         sign_random_add/1]).
 
 
 -record(acl, {ip = undefined, status = undefined}).
+
+-record(sign, {appid = <<"">> :: binary(),
+               secret = <<"">> :: binary()}).
+
+
+sign_start() ->
+    case mnesia:create_table(sign,
+                             [{disc_copies, [node()]},
+                              {attributes, record_info(fields, sign)}]) of
+    {aborted, Reason} ->
+        case Reason of
+        {already_exists, _} ->
+            ok;
+        _ ->
+            lager:alert("create table 'sign' failed: ~p", [Reason]),
+            erlang:error(create_table_error)
+        end;
+    {atomic, ok} ->
+        ok
+    end.
 
 
 acl_start() ->
@@ -81,20 +104,109 @@ acl_real_del(IP) ->
     mnesia:dirty_delete(acl, IP).
 
 
+sign_random_add(Appid) when is_list(Appid) ->
+    BinaryAppid = list_to_binary(Appid),
+    sign_random_add(BinaryAppid);
+sign_random_add(Appid) ->
+    Secret = uuid:to_string(simple, crypto:hash(md5, uuid:uuid1())),
+    sign_add(Appid, list_to_binary(Secret)),
+    list_to_binary(Secret).
+
+
+sign_get(Appid) when is_list(Appid) ->
+    sign_get(list_to_binary(Appid));
+sign_get(Appid) ->
+    case mnesia:dirty_read(sign, Appid) of
+    [] ->
+        undefined;
+    [#sign{secret = Secret}] ->
+        Secret
+    end.
+
+
+sign_add(Appid, Secret) ->
+    catch mnesia:dirty_write(sign, #sign{appid = Appid, secret = Secret}).
+
+
+sign_check(Req) ->
+    {ok, Body, Req2} = cowboy_req:body(Req),
+
+
+    case application:get_env(tbcd, sign_check, off) of
+    off ->
+        {yes, Body, Req2};
+    on ->
+        {Appid, Req3} = cowboy_req:qs_val(<<"appid">>, Req2),
+        case Appid of
+        undefined ->
+            lager:info("no appid in arguments"),
+            {no, Body, Req3};
+        _ ->
+            {Sign, Req4} = cowboy_req:qs_val(<<"sign">>, Req3),
+            case Sign of
+            undefined ->
+                lager:info("no sign in arguments"),
+                {no, Body, Req4};
+            _ ->
+                case mnesia:dirty_read(sign, Appid) of
+                [] ->
+                    lager:info("invalid appid"),
+                    {no, Body, Req4};
+                [#sign{secret = Secret}] ->
+                    case sign_check(Appid, Sign, Secret, Body) of
+                    write ->
+                        {yes, Body, Req4};
+                    wrong ->
+                        {no, Body, Req4}
+                    end
+                end
+            end
+        end
+    end.
+
+
+sign_check(Appid, Sign, Secret, Body) ->
+    %% sign = md5(Appid + Body + Secret)
+    Context = crypto:hash_init(md5),
+    Context1 = crypto:hash_update(Context, Appid),
+    Context2 = crypto:hash_update(Context1, Body),
+    Context3 = crypto:hash_update(Context2, Secret),
+    Digest = list_to_binary(uuid:to_string(simple,
+                                           crypto:hash_final(Context3))),
+
+    if
+    Digest =:= Sign ->
+        write;
+    true ->
+        lager:info("invalid sign: write: ~p, request: ~p", [Sign, Digest]),
+        wrong
+    end.
+
+
+start() ->
+    acl_start(),
+    sign_start().
+
+
 valid_request(Req) ->
     {Method, Req2} = cowboy_req:method(Req),
 
     case Method of
     <<"POST">> ->
-        {{IP, Port}, Req3} = cowboy_req:peer(Req2),
-        case acl_allow(IP) of
-        no ->
-            lager:info("request forbidden: from ~p:~p", [IP, Port]),
-            {no, Req3};
-        yes ->
-            {yes, Req3}
+        case application:get_env(tbcd, acl_check, off) of
+        on ->
+            {{IP, Port}, Req3} = cowboy_req:peer(Req2),
+            case acl_allow(IP) of
+            no ->
+                lager:info("request forbidden: from ~p:~p", [IP, Port]),
+                {no, undefined, Req3};
+            yes ->
+                sign_check(Req3)
+            end;
+        off ->
+            sign_check(Req2)
         end;
     _ ->
         lager:info("request forbidden: method ~p", [Method]),
-        {no, Req2}
+        {no, undefined, Req2}
     end.
