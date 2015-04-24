@@ -108,7 +108,7 @@ sign_random_add(Appid) when is_list(Appid) ->
     BinaryAppid = list_to_binary(Appid),
     sign_random_add(BinaryAppid);
 sign_random_add(Appid) ->
-    Secret = uuid:to_string(simple, crypto:hash(md5, uuid:uuid1())),
+    Secret = uuid:to_string(simple, erlang:md5(uuid:uuid1())),
     sign_add(Appid, list_to_binary(Secret)),
     list_to_binary(Secret).
 
@@ -167,12 +167,12 @@ sign_check(Req) ->
 
 sign_check(Appid, Sign, Secret, Body) ->
     %% sign = md5(Appid + Body + Secret)
-    Context = crypto:hash_init(md5),
-    Context1 = crypto:hash_update(Context, Appid),
-    Context2 = crypto:hash_update(Context1, Body),
-    Context3 = crypto:hash_update(Context2, Secret),
+    Context = erlang:md5_init(),
+    Context1 = erlang:md5_update(Context, Appid),
+    Context2 = erlang:md5_update(Context1, Body),
+    Context3 = erlang:md5_update(Context2, Secret),
     Digest = list_to_binary(uuid:to_string(simple,
-                                           crypto:hash_final(Context3))),
+                                           erlang:md5_final(Context3))),
 
     if
     Digest =:= Sign ->
