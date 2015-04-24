@@ -147,6 +147,16 @@ When someone of the APIs failed, the response would be like this:
 {"code":1, "reason":"balabala ..."}
 ```
 
+### Optional checking for request
+
+When 'sign_check' set to on, every request should contain 'appid' and 'sign'
+arguments. Every 'appid' owned a secret key. The caller should calculate a
+digest of the posted data like this:
+```php
+$digest = md5($appid + $posted_data + $secret)
+```
+Tbcd would check whether the digest is correct.
+
 ## Authors
 
 - Gu Feng <flygoast@126.com>
