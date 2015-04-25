@@ -245,7 +245,8 @@ subtask_feedback(Worker, TidString, Result) ->
                          timestamp = now(),
                          result = Result},
 
-            CounterIncr = case mnesia:wread(finished_subtask, T#subtask.sid) of
+            CounterIncr = case mnesia:wread({finished_subtask,
+                                             T#subtask.sid}) of
                           [] -> -1;
                           _ -> 0
                           end,
