@@ -186,7 +186,7 @@ project_delete(Ls, Workers) ->
         {error, "project argument is empty"};
     {_, P} when is_binary(P) ->
         F = fun() ->
-                case mnesia:read(project, P) of
+                case mnesia:wread(project, P) of
                 [] ->
                     {error, "project not existed"};
                 [#project{workers = OW}] ->
@@ -237,7 +237,7 @@ project_add(Ls, Wk) ->
         {error, "project argument is empty"};
     {_, P} when is_binary(P) ->
         F = fun() ->
-                case mnesia:read(project, P) of
+                case mnesia:wread(project, P) of
                 [] ->
                     mnesia:write(#project{name = P, workers = WkSet}),
                     ok;
