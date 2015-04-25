@@ -142,7 +142,7 @@ handle_info({feedback, Tid, Incr}, State) ->
                                   {<<"result">>, Result}]}
                             end, Rs),
 
-            Content = jiffy:encode({[{<<"tid">>, Tid},
+            Content = jiffy:encode({[{<<"tid">>, integer_to_binary(Tid)},
                                      {<<"results">>, Ret}]}),
             Headers = [{"Connection", "close"}],
             Req = {Callback, Headers, "application/json", Content},

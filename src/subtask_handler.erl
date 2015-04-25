@@ -238,7 +238,8 @@ subtask_feedback(_, _) ->
     false.
 
 
-subtask_feedback(Worker, Tid, Result) ->
+subtask_feedback(Worker, TidString, Result) ->
+    Tid = binary_to_integer(TidString),
     F = fun() ->
             T = #subtask{sid = {Tid, Worker},
                          timestamp = now(),
@@ -298,7 +299,7 @@ subtask_fetch_with_project(Worker, Project) ->
                              mnesia:write(fetched_subtask, E, write),
                              mnesia:delete({unfetched_subtask, E#subtask.sid}),
 
-                             {true, {[{<<"tid">>, Tid},
+                             {true, {[{<<"tid">>, integer_to_binary(Tid)},
                                       {<<"project">>, Task#task.project},
                                       {<<"content">>, Task#task.content}]}};
                          _ ->
@@ -337,7 +338,7 @@ subtask_fetch(Worker) ->
                          mnesia:write(fetched_subtask, E, write),
                          mnesia:delete({unfetched_subtask, E#subtask.sid}),
 
-                         {[{<<"tid">>, Tid},
+                         {[{<<"tid">>, integer_to_binary(Tid)},
                            {<<"project">>, Task#task.project},
                            {<<"content">>, Task#task.content}]}
                      end,

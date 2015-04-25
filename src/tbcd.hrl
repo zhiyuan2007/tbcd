@@ -30,16 +30,21 @@
 -record(project, {name = <<"">> :: binary(),
                   workers = sets:new()}).
 
--record(task, {tid = <<"">> :: binary(),
+-record(task, {tid = 0 :: integer(),
                project = <<"">> :: binary(),
                content = <<"">> :: binary(),
                callback = undefined :: binary() | undefined,
                timestamp = now() :: erlang:timestamp() | '_'}).
 
--record(task_count, {tid = <<"">> :: binary(),
+-record(task_count, {tid = 0 :: integer(),
                      count = 0 :: integer()}).
 
+
+-record(id_counter, {id = undefined :: atom(),
+                     next = 0 :: integer()}).
+
+
 %% sid = {task, worker}
--record(subtask, {sid = {<<"">>, <<"">>} :: {binary(), binary()},
+-record(subtask, {sid = {0, <<"">>} :: {integer(), binary()},
                   timestamp = now() :: erlang:timestamp() | '_',
                   result = <<"">> :: binary()}).

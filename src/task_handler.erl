@@ -117,7 +117,8 @@ task_select(Ls) ->
         {error, "tids argument is empty array"};
     {_, TIDS} when is_list(TIDS) ->
         lager:info("tids: ~p", [TIDS]),
-        F = fun(Id) ->
+        F = fun(IdString) ->
+                Id = binary_to_integer(IdString),
                 case mnesia:dirty_read(task_count, Id) of
                 [] ->
                     {[{<<"tid">>, Id},
@@ -128,7 +129,7 @@ task_select(Ls) ->
                     lager:info("select, tid: ~p, unfinished count: ~p",
                                [Id, Count]),
 
-                    {[{<<"tid">>, Id},
+                    {[{<<"tid">>, IdString},
                       {<<"status">>, list_to_binary(integer_to_list(Count))}]}
                 end
             end,
@@ -182,23 +183,30 @@ task_add2(Project, Content, Callback) ->
     [] ->
         {error, "invalid project"};
     _ ->
-        Tid = list_to_binary(uuid:to_string(simple, uuid:uuid1())),
-
-        lager:info("add: taskid: ~p", [Tid]),
-
-        F = fun() ->
-                mnesia:write(#task{tid = Tid,
-                                   project = Project,
-                                   content = Content,
-                                   callback = Callback,
-                                   timestamp = now()})
-            end,
-        case mnesia:transaction(F) of
-        {atomic, _Rs} ->
-            tbcd_subtask ! {new, Tid, Project},
-            Tid;
+        case task_get_id() of
         {aborted, Reason} ->
-            lager:error("add: mnesia error: ~p", [Reason]),
-            {aborted, Reason}
+            {aborted, Reason};
+        Tid ->
+            lager:info("add: taskid: ~p", [Tid]),
+
+            F = fun() ->
+                    mnesia:write(#task{tid = Tid,
+                                       project = Project,
+                                       content = Content,
+                                       callback = Callback,
+                                       timestamp = now()})
+                end,
+            case mnesia:transaction(F) of
+            {atomic, _Rs} ->
+                tbcd_subtask ! {new, Tid, Project},
+                integer_to_binary(Tid);
+            {aborted, Reason} ->
+                lager:error("add: mnesia error: ~p", [Reason]),
+                {aborted, Reason}
+            end
         end
     end.
+
+
+task_get_id() ->
+    mnesia:dirty_update_counter(id_counter, task, 1).

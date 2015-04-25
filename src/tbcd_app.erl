@@ -106,6 +106,7 @@ db_init() ->
 
     case mnesia:create_table(task,
                              [{disc_copies, [node()]},
+                              {type, ordered_set},
                               {attributes, record_info(fields, task)}]) of
     {aborted, Reason2} ->
         case Reason2 of
@@ -122,6 +123,7 @@ db_init() ->
     case mnesia:create_table(unfetched_subtask,
                              [{disc_copies, [node()]},
                               {record_name, subtask},
+                              {type, ordered_set},
                               {attributes, record_info(fields, subtask)}]) of
     {aborted, Reason3} ->
         case Reason3 of
@@ -138,6 +140,7 @@ db_init() ->
 
     case mnesia:create_table(fetched_subtask,
                              [{disc_copies, [node()]},
+                              {type, ordered_set},
                               {record_name, subtask},
                               {attributes, record_info(fields, subtask)}]) of
     {aborted, Reason4} ->
@@ -155,6 +158,7 @@ db_init() ->
     case mnesia:create_table(finished_subtask,
                              [{disc_copies, [node()]},
                               {record_name, subtask},
+                              {type, ordered_set},
                               {attributes, record_info(fields, subtask)}]) of
     {aborted, Reason5} ->
         case Reason5 of
@@ -178,6 +182,21 @@ db_init() ->
             ok;
         _ ->
             lager:alert("create table 'task_count' failed: ~p", [Reason6]),
+            erlang:error(create_table_error)
+        end;
+    {atomic, ok} ->
+        ok
+    end,
+
+    case mnesia:create_table(id_counter,
+                             [{disc_copies, [node()]},
+                              {attributes, record_info(fields, id_counter)}]) of
+    {aborted, Reason7} ->
+        case Reason7 of
+        {already_exists, _} ->
+            ok;
+        _ ->
+            lager:alert("create table 'task_id' failed: ~p", [Reason7]),
             erlang:error(create_table_error)
         end;
     {atomic, ok} ->
