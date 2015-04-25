@@ -149,17 +149,16 @@ project_select(P) ->
     F = fun() ->
             case mnesia:read(project, P) of
             [] ->
-                lager:info("select: project ~p not existed", [P]),
                 {error, "project not existed"};
             [#project{workers = W}] ->
                 Workers = sets:to_list(W),
-                lager:info("select: project: ~p, workers: ~p", [P, Workers]),
                 Workers
             end
         end,
 
     case mnesia:transaction(F) of
     {atomic, Rs} ->
+        lager:info("select: project: ~p, result: ~p", [P, Rs]),
         Rs;
     {aborted, Reason} ->
         lager:error("select: mnesia error: ~p", [Reason]),
@@ -189,22 +188,15 @@ project_delete(Ls, Workers) ->
         F = fun() ->
                 case mnesia:read(project, P) of
                 [] ->
-                    lager:info("delete: ~p not existed", [P]),
                     {error, "project not existed"};
                 [#project{workers = OW}] ->
                     case Workers of
                     [] -> %% delete the project
-                        lager:info("delete entile project: ~p", [P]),
                         mnesia:delete({project, P}),
                         ok;
                     _ -> %% delete the workers from project
                         NewWorkers = sets:subtract(OW, WkSet),
-                        UWK = sets:to_list(WkSet),
-                        NWL = sets:to_list(NewWorkers),
                         mnesia:write(#project{name = P, workers = NewWorkers}),
-                        lager:info("delete project: ~p, workers: ~p, "
-                                   "left workers: ~p",
-                                   [P, UWK, NWL]),
                         ok
                     end
                 end
@@ -212,6 +204,7 @@ project_delete(Ls, Workers) ->
 
         case mnesia:transaction(F) of
         {atomic, Rs} ->
+            lager:info("delete: project: ~p, result: ~p", [P, Rs]),
             Rs;
         {aborted, Reason} ->
             lager:error("delete: mnesia error: ~p", [Reason]),
@@ -236,7 +229,6 @@ project_add(Ls) ->
 project_add(Ls, Wk) ->
     %% drop the duplicated
     WkSet = sets:from_list(Wk),
-    UWK = sets:to_list(WkSet),
 
     case lists:keyfind(<<"project">>, 1, Ls) of
     false ->
@@ -248,22 +240,17 @@ project_add(Ls, Wk) ->
                 case mnesia:read(project, P) of
                 [] ->
                     mnesia:write(#project{name = P, workers = WkSet}),
-                    lager:info("add new project: ~p, workers: ~p",
-                               [P, UWK]),
                     ok;
                 [#project{workers = OW}] ->
                     NewWorkers = sets:union(OW, WkSet),
                     mnesia:write(#project{name = P, workers = NewWorkers}),
-                    lager:info("add old project: ~p, old workers: ~p, "
-                               "added workers: ~p, all workers: ~p",
-                               [P, sets:to_list(OW),
-                                UWK, sets:to_list(NewWorkers)]),
                     ok
                 end
             end,
 
         case mnesia:transaction(F) of
         {atomic, Rs} ->
+            lager:info("add workers: project: ~p, result: ~p", [P, Rs]),
             Rs;
         {aborted, Reason} ->
             lager:error("add workers: mnesia error: ~p", [Reason]),

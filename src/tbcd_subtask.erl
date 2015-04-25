@@ -84,17 +84,14 @@ handle_info({new, Tid, Project}, State) ->
                 lists:foreach(fun(Ele) ->
                                   ST = #subtask{sid = {Tid, Ele},
                                                 timestamp = now()},
-                                  mnesia:write(unfetched_subtask, ST,
-                                               write),
+                                  mnesia:write(unfetched_subtask, ST, write),
 
                                   case tbcd_register:registered(Ele, Project) of
                                   undefined ->
                                       ok;
                                   Pid ->
                                       Pid ! {reply}
-                                  end,
-
-                                  lager:info("new: ~p: ~p", [Tid, Ele])
+                                  end
                               end, L),
                 length(L)
             end
@@ -119,7 +116,6 @@ handle_info({feedback, Tid, Incr}, State) ->
         F = fun() ->
                 case mnesia:read(task, Tid) of
                 [] ->
-                    lager:error("feedback, invalid tid: ~p", [Tid]),
                     {error, "invalid tid"};
                 [#task{callback = undefined}] ->
                     ok;
@@ -136,7 +132,8 @@ handle_info({feedback, Tid, Incr}, State) ->
         case mnesia:transaction(F) of
         {atomic, ok} ->
             ok;
-        {atomic, {error, _Reason}} ->
+        {atomic, {error, Reason}} ->
+            lager:info("feedback, error: ~p", [Reason]),
             ok;
         {atomic, {Callback, Rs}} ->
 

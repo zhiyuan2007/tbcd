@@ -299,7 +299,6 @@ subtask_fetch_with_project(Worker, Project) ->
                              mnesia:write(fetched_subtask, E, write),
                              mnesia:delete({unfetched_subtask, E#subtask.sid}),
 
-                             lager:info("fetched task: ~p", [Task]),
                              {true, {[{<<"tid">>, Tid},
                                       {<<"project">>, Task#task.project},
                                       {<<"content">>, Task#task.content}]}};
@@ -338,8 +337,6 @@ subtask_fetch(Worker) ->
 
                          mnesia:write(fetched_subtask, E, write),
                          mnesia:delete({unfetched_subtask, E#subtask.sid}),
-
-                         lager:info("fetched task: ~p", [Task]),
 
                          {[{<<"tid">>, Tid},
                            {<<"project">>, Task#task.project},
