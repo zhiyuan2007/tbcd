@@ -124,6 +124,10 @@ sign_get(Appid) ->
     end.
 
 
+sign_add(Appid, Secret) when is_list(Appid) ->
+    sign_add(list_to_binary(Appid), Secret);
+sign_add(Appid, Secret) when is_list(Secret) ->
+    sign_add(Appid, list_to_binary(Secret));
 sign_add(Appid, Secret) ->
     catch mnesia:dirty_write(sign, #sign{appid = Appid, secret = Secret}).
 
