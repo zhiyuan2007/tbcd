@@ -142,22 +142,38 @@ sign_check(Req) ->
             lager:info("no appid in arguments"),
             {no, Body, Req3};
         _ ->
-            {Sign, Req4} = cowboy_req:qs_val(<<"sign">>, Req3),
-            case Sign of
+            {Ts, Req4} = cowboy_req:qs_val(<<"timestamp">>, Req3),
+            case Ts of
             undefined ->
-                lager:info("no sign in arguments"),
+                lager:info("no timestamp in arguments"),
                 {no, Body, Req4};
             _ ->
-                case mnesia:dirty_read(sign, Appid) of
-                [] ->
-                    lager:info("invalid appid"),
+                Ts1 = binary_to_integer(Ts),
+                Now = unix_timestamp(),
+
+                if
+                Now > Ts1 + 5 * 60 ->
+                    lager:info("url expired, now: ~p, ts: ~p", [Now, Ts1]),
                     {no, Body, Req4};
-                [#sign{secret = Secret}] ->
-                    case sign_check(Appid, Sign, Secret, Body) of
-                    write ->
-                        {yes, Body, Req4};
-                    wrong ->
-                        {no, Body, Req4}
+                true ->
+                    {Sign, Req5} = cowboy_req:qs_val(<<"sign">>, Req4),
+                    case Sign of
+                    undefined ->
+                        lager:info("no sign in arguments"),
+                        {no, Body, Req5};
+                    _ ->
+                        case mnesia:dirty_read(sign, Appid) of
+                        [] ->
+                            lager:info("invalid appid"),
+                            {no, Body, Req5};
+                        [#sign{secret = Secret}] ->
+                            case sign_check(Appid, Sign, Secret, Body, Ts) of
+                            write ->
+                                {yes, Body, Req5};
+                            wrong ->
+                                {no, Body, Req5}
+                            end
+                        end
                     end
                 end
             end
@@ -165,14 +181,17 @@ sign_check(Req) ->
     end.
 
 
-sign_check(Appid, Sign, Secret, Body) ->
-    %% sign = md5(Appid + Body + Secret)
+sign_check(Appid, Sign, Secret, Body, Timestamp) ->
+    %%================================================
+    %% sign = md5(Appid + Body + Secret + Timestamp)
+    %%================================================
     Context = erlang:md5_init(),
     Context1 = erlang:md5_update(Context, Appid),
     Context2 = erlang:md5_update(Context1, Body),
     Context3 = erlang:md5_update(Context2, Secret),
+    Context4 = erlang:md5_update(Context3, Timestamp),
     Digest = list_to_binary(uuid:to_string(simple,
-                                           erlang:md5_final(Context3))),
+                                           erlang:md5_final(Context4))),
 
     if
     Digest =:= Sign ->
@@ -210,3 +229,8 @@ valid_request(Req) ->
         lager:info("request forbidden: method ~p", [Method]),
         {no, undefined, Req2}
     end.
+
+
+unix_timestamp() ->
+    {M, S, _} = erlang:now(),
+    M * 1000000 + S.
