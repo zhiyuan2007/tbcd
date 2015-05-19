@@ -25,46 +25,28 @@
 %%% SUCH DAMAGE.
 %%%
 
--module(tbcd_sup).
--behaviour(supervisor).
+-module(tbcd_alarm).
 -author('flygoast@126.com').
 
--export([start_link/0]).
--export([init/1]).
+
+-export([start/0,
+         send_alarm/4]).
 
 
-start_link() ->
-    supervisor:start_link({local, ?MODULE}, ?MODULE, []).
+-include("tbcd.hrl").
 
 
-init([]) ->
-    SubtaskChildSpec = {
-        tbcd_subtask,
-        {tbcd_subtask, start_link, []},
-        permanent,
-        brutal_kill,
-        worker,
-        [tbcd_subtak]
-    },
+-record(state, {}).
 
-    RegisterChildSpec = {
-        tbcd_register,
-        {tbcd_register, start_link, []},
-        permanent,
-        brutal_kill,
-        worker,
-        [tbcd_register]
-    },
 
-    MonitorChildSpec = {
-        tbcd_monitor,
-        {tbcd_monitor, start_link, []},
-        permanent,
-        brutal_kill,
-        worker,
-        [tbcd_monitor]
-    },
+start() ->
+    lager:info("alarm started"),
+    #state{}.
 
-    Procs = [SubtaskChildSpec, RegisterChildSpec, MonitorChildSpec],
 
-    {ok, {{one_for_one, 1, 5}, Procs}}.
+send_alarm(State, unfetched, R, _Now) ->
+    lager:info("send_alarm, unfetched: ~p", [R]),
+    State;
+send_alarm(State, fetched, R, _Now) ->
+    lager:info("send_alarm, fetched: ~p", [R]),
+    State.
