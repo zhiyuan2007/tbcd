@@ -45,8 +45,8 @@ start() ->
 
 
 send_alarm(State, unfetched, R, _Now) ->
-    lager:info("send_alarm, unfetched: ~p", [R]),
+    lager:error("unfetched subtask timeout: ~p", [R]),
     State;
 send_alarm(State, fetched, R, _Now) ->
-    lager:info("send_alarm, fetched: ~p", [R]),
+    lager:error("fetched subtask timeout: ~p", [R]),
     State.
