@@ -135,9 +135,14 @@ check_unfetched(State, Now) ->
 
             if
             Now > Created + Timeout ->
-                S = (catch erlang:apply(Module, send_alarm,
-                                        [AS, unfetched, R, Now])),
-                {alarmed, S};
+                case catch erlang:apply(Module, send_alarm,
+                                        [AS, unfetched, R, Now]) of
+                {'EXIT', Reason} ->
+                    lager:error("call send_alarm failed: ~p", [Reason]),
+                    ok;
+                S ->
+                    {alarmed, S}
+                end;
             true ->
                 ok
             end
@@ -165,9 +170,14 @@ check_fetched(State, Now) ->
 
             if
             Now > Created + Timeout ->
-                S = (catch erlang:apply(Module, send_alarm,
-                                        [AS, fetched, R, Now])),
-                {alarmed, S};
+                case catch erlang:apply(Module, send_alarm,
+                                        [AS, fetched, R, Now]) of
+                {'EXIT', Reason} ->
+                    lager:error("call send_alarm failed: ~p", [Reason]),
+                    ok;
+                S ->
+                    {alarmed, S}
+                end;
             true ->
                 ok
             end
