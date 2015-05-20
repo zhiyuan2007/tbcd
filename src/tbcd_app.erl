@@ -41,11 +41,12 @@ start(_Type, _Args) ->
 
     Port = application:get_env(tbcd, port, 8080),
     Host = application:get_env(tbcd, host, '_'),
+    Mnesia = application:get_env(tbcd, mnesia_dir, undefined),
 
     lager:info("host:~p, port: ~p", [Host, Port]),
 
     %% initialized database
-    db_init(),
+    db_init(Mnesia),
 
     Dispatch = cowboy_router:compile([{Host, [{"/project", project_handler, []},
                                               {"/task", task_handler, []},
@@ -62,14 +63,40 @@ start(_Type, _Args) ->
 
 
 stop(_State) ->
+    mnesia:stop(),
     ok.
 
 
 %%%----------------------------------------------------
 %%% Initialized database.
 %%%----------------------------------------------------
-db_init() ->
+db_init(undefined) ->
+    lager:critical("'mnesia_dir' must be supplied"),
+    erlang:error(no_mnesia_dir);
+db_init(Mnesia) ->
     MyNode = node(),
+
+    lager:info("mnesia dir: ~p", [Mnesia]),
+
+    Dir = case lists:last(Mnesia) of
+          $/ ->
+              Mnesia;
+          _ ->
+              Mnesia ++ "/"
+          end,
+
+    case filelib:ensure_dir(Dir) of
+    ok ->
+        ok;
+    {error, Error} ->
+        lager:critical("filelib:ensure_dir failed: ~p", [Error]),
+        erlang:error(ensure_dir_error)
+    end,
+
+    application:set_env(mnesia, dir, Dir),
+
+    catch mnesia:stop(),
+
     DbNodes = mnesia:system_info(db_nodes),
     case lists:member(MyNode, DbNodes) of
     true ->
