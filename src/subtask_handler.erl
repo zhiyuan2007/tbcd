@@ -239,6 +239,9 @@ subtask_feedback(_, _) ->
 
 
 subtask_feedback(Worker, TidString, Result) ->
+    lager:info("feedback: worker: ~p, tid: ~p, result: ~p",
+               [Worker, TidString, Result]),
+
     Tid = binary_to_integer(TidString),
     F = fun() ->
             T = #subtask{sid = {Tid, Worker},
