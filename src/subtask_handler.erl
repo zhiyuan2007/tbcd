@@ -317,7 +317,7 @@ subtask_fetch_with_project(Worker, Project) ->
         end,
     case mnesia:transaction(F) of
     {atomic, Rs} ->
-        lager:info("fetched success: ~p", [Rs]),
+        lager:info("fetched success, worker: ~p, ~p", [Worker, Rs]),
         Rs;
     {aborted, Reason} ->
         lager:error("mnesia error: ~p", [Reason]),
@@ -353,7 +353,7 @@ subtask_fetch(Worker) ->
         end,
     case mnesia:transaction(F) of
     {atomic, Rs} ->
-        lager:info("fetched success: ~p", [Rs]),
+        lager:info("fetched success, worker: ~p, ~p", [Worker, Rs]),
         Rs;
     {aborted, Reason} ->
         lager:error("mnesia error: ~p", [Reason]),
