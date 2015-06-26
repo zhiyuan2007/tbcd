@@ -115,6 +115,11 @@ subtasks is ready or timeout. When timeout, HTTP code 204 would be returned.
              {"tid":"task2", "project":"dummy", "content":"balabala"}]}
 ```
 
+#### Ack for Request Once receive response in client
+```json
+{"mode":"fetch_ack", "worker":"w1", "project":"dummy", "tids":["t1", "t2"]}
+```
+
 #### Feedback result of subtasks
 
 ##### Request
