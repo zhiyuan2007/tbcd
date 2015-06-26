@@ -71,6 +71,18 @@ handle_request(Req, Body) ->
                 Content = jiffy:encode({[{<<"code">>, 0}]}),
                 shutdown_json(Req, 200, Content)
             end;
+        {_, <<"fetch_ack">>} ->
+            case subtask_fetch_ack(Ls) of
+            {error, Reason} ->
+                Content = jiffy:encode({[{<<"code">>, 1},
+                                         {<<"reason">>,
+                                          list_to_binary(Reason)}]}),
+                shutdown_json(Req, 200, Content);
+            ok ->
+                Content = jiffy:encode({[{<<"code">>, 0}]}),
+                shutdown_json(Req, 200, Content)
+            end;
+
         {_, <<"fetch">>} ->
             case lists:keyfind(<<"worker">>, 1, Ls) of
             false ->
@@ -161,7 +173,7 @@ info({reply}, Req, State) ->
         tbcd_reply:reply_plain(Req, State, 200, Content);
     T ->
         Content = jiffy:encode({[{<<"code">>, 0}, {<<"subtasks">>, T}]}),
-        lager:info("fetched: ~p", [Content]),
+        lager:info("worker: ~p, fetched: ~p", [Worker, Content]),
         tbcd_reply:reply_json(Req, State, 200, Content)
     end;
 info(_Info, Req, State) ->
@@ -283,6 +295,63 @@ subtask_fetch(Ls, Worker) ->
         end
     end.
 
+subtask_fetch_ack(Ls) ->
+    lager:info("fetch ack info: ~p", [Ls]),
+    case lists:keyfind(<<"worker">>, 1, Ls) of
+    false ->
+        {error, "worker argument not supplied"};
+    {_, <<"">>} ->
+        {error, "worker argument is empty"};
+    {_, W} when is_binary(W) ->
+        case lists:keyfind(<<"tids">>, 1, Ls) of
+        false ->
+            {error, "tids argument not supplied"};
+        {_, []} ->
+            {error, "tids argument is empty"};
+        {_, Tids} when is_list(Tids) ->
+            case subtask_fetch_ack(W, Tids) of
+            true ->
+                ok
+            end;
+        _ ->
+            {error, "tids argument must be a array"}
+        end;
+    _ ->
+        {error, "workers argument is not string"}
+    end.
+
+subtask_fetch_ack(_, []) ->
+    true;
+subtask_fetch_ack(Worker, [Tid|Rest]) ->
+    transfer_subtask_from_unfetch_to_fetch(Worker, binary_to_integer(Tid)),
+    subtask_fetch_ack(Worker, Rest).
+
+transfer_subtask_from_unfetch_to_fetch(Worker, Tid) ->
+    F = fun() ->
+            MatchHead = #subtask{sid = {Tid, Worker}, _ = '_'},
+            Guard = [],
+            Result = '$_',
+            case mnesia:select(unfetched_subtask,
+                               [{MatchHead, Guard, [Result]}],
+                               10,
+                               read) of
+            {Es, _Cont} ->
+                E = lists:nth(1, Es),
+                mnesia:write(fetched_subtask, E, write),
+                mnesia:delete({unfetched_subtask, E#subtask.sid}),
+                true;
+            '$end_of_table' ->
+                []
+            end
+        end,
+    case mnesia:transaction(F) of
+    {atomic, Rs} ->
+        lager:info("worker: ~p transfer tid ~p success", [Worker, Tid]),
+        Rs;
+    {aborted, Reason} ->
+        lager:error("worker: ~p transfer tid ~p", [Worker, Tid, Reason]),
+        {aborted, Reason}
+    end.
 
 subtask_fetch_with_project(Worker, Project) ->
     F = fun() ->
@@ -300,8 +369,6 @@ subtask_fetch_with_project(Worker, Project) ->
 
                          case Task#task.project of
                          Project ->
-                             mnesia:write(fetched_subtask, E, write),
-                             mnesia:delete({unfetched_subtask, E#subtask.sid}),
 
                              {true, {[{<<"tid">>, integer_to_binary(Tid)},
                                       {<<"project">>, Task#task.project},
@@ -317,10 +384,10 @@ subtask_fetch_with_project(Worker, Project) ->
         end,
     case mnesia:transaction(F) of
     {atomic, Rs} ->
-        lager:info("fetched success, worker: ~p, ~p", [Worker, Rs]),
+        lager:info("worker: ~p fetched success: ~p", [Worker, Rs]),
         Rs;
     {aborted, Reason} ->
-        lager:error("mnesia error: ~p", [Reason]),
+        lager:error("worker: ~p mnesia error: ~p", [Worker, Reason]),
         {aborted, Reason}
     end.
 
@@ -339,9 +406,6 @@ subtask_fetch(Worker) ->
                          {Tid, _} = E#subtask.sid,
                          [Task] = mnesia:read(task, Tid),
 
-                         mnesia:write(fetched_subtask, E, write),
-                         mnesia:delete({unfetched_subtask, E#subtask.sid}),
-
                          {[{<<"tid">>, integer_to_binary(Tid)},
                            {<<"project">>, Task#task.project},
                            {<<"content">>, Task#task.content}]}
@@ -353,10 +417,10 @@ subtask_fetch(Worker) ->
         end,
     case mnesia:transaction(F) of
     {atomic, Rs} ->
-        lager:info("fetched success, worker: ~p, ~p", [Worker, Rs]),
+        lager:info("worker: ~p, fetched success: ~p", [Worker, Rs]),
         Rs;
     {aborted, Reason} ->
-        lager:error("mnesia error: ~p", [Reason]),
+        lager:error("worker: ~p, mnesia error: ~p", [Worker, Reason]),
         {aborted, Reason}
     end.
 

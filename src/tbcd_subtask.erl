@@ -37,6 +37,8 @@
 -export([start_link/0,
          http_recv/1]).
 
+% for unit
+-export([unfinished_works/0]).
 
 %% gen_server callbacks
 -export([init/1,
@@ -164,8 +166,25 @@ handle_info({feedback, Tid, Incr}, State) ->
 handle_info(_Info, State) ->
     {noreply, State}.
 
+unfinished_works() ->
+    F = fun() ->
+            MatchHead = #subtask{_ = '_'},
+            Guard = [],
+            Result = '$_',
+            mnesia:select(fetched_subtask, [{MatchHead, Guard, [Result]}])
+        end,
+    case mnesia:transaction(F) of
+    {atomic, Rs} ->
+        F1 = fun({_, {_, W}, _, _}) ->
+                W 
+             end,
+        lists:map(F1, Rs);
+    {aborted, Reason} ->
+        {aborted, Reason}
+    end.
 
 terminate(_Reason, _State) ->
+    lager:info("teminated: ~p~n", [_Reason]),
     ok.
 
 
